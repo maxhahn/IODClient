@@ -10,3 +10,5 @@ streamlit-autorefresh
 statsmodels
 scipy
 rpyc
+selenium
+geckodriver
