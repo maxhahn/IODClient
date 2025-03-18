@@ -172,14 +172,25 @@ def get_dataframe_from_r(test_setup, num_samples):
         var_type = random.choice(list(potential_var_types.keys()))
         var_types[label] = var_type
         var_levels += [random.choice(potential_var_types[var_type])]
-    dat = get_data_f(raw_true_pag, num_samples, var_levels)
-    print('---')
-    print(dat)
-    "CAN ACTUALLY BE NULL, JUST RETRY"
-    with (ro.default_converter + pandas2ri.converter).context():
-        df = ro.conversion.get_conversion().rpy2py(dat[0])
-    print(df)
-    df = pl.from_pandas(df)
+    succeeded = False
+    cnt = 0
+    while not succeeded:
+        cnt += 1
+        dat = get_data_f(raw_true_pag, num_samples, var_levels)
+        #print('---')
+        #print(dat)
+        # "CAN ACTUALLY BE NULL, JUST RETRY"
+        with (ro.default_converter + pandas2ri.converter).context():
+            df = ro.conversion.get_conversion().rpy2py(dat[0])
+        #print(df)
+        try:
+            df = pl.from_pandas(df)
+        except:
+            if cnt > 10:
+                print(raw_true_pag)
+            continue
+
+        succeeded = True
     for var_name, var_type in var_types.items():
         if var_type == 'continuous':
             df = df.with_columns(pl.col(var_name).cast(pl.Float64))
@@ -232,13 +243,16 @@ def get_data(test_setup, num_samples, num_clients):
         client_data = [df.select(c) for df, c in zip(split_dfs, [cols_c1, cols_c2] + cols_cx)]
 
         is_valid = not any([split.select(fail=pl.any_horizontal((cs.boolean() | cs.string() | cs.integer()).n_unique() == 1))['fail'][0] for split in client_data])
+        if not is_valid:
+            continue
+
         for d in client_data:
-            if len(d) < 5:
+            if len(d) < 2:
                 is_valid = False
                 break
-            if len(d.select(cs.boolean() | cs.string() | cs.integer())) == 0:
+            if len(d.select(cs.boolean())) == 0:
                 continue
-            if any([l < 3 for l in d.group_by(cs.boolean() | cs.string() | cs.integer()).len()['len'].to_list()]):
+            if any([l < 2 for l in d.group_by(cs.boolean()).len()['len'].to_list()]):
                 is_valid = False
                 break
     return (pag, sorted(data.columns)), (client_data, split_percs)
@@ -515,7 +529,7 @@ NUM_TESTS = 10
 ALPHA = 0.05
 
 #test_setups = test_setups[5:10]
-data_dir = './experiments/simulation/pvalagg_vs_fedci'
+data_dir = './experiments/simulation/pvalagg_vs_fedci_new'
 data_file_pattern = '{}-{}-{}.ndjson'
 
 import datetime
@@ -573,10 +587,10 @@ def run_comparison(setup):
 
     #print(found_correct_pag_fedci, found_correct_pag_pvalagg)
 
-    #log_results(data_dir, data_file, metrics, metrics_pvalagg, ALPHA, num_samples, num_clients, data_percs)
+    log_results(data_dir, data_file, metrics, metrics_pvalagg, ALPHA, num_samples, num_clients, data_percs)
 
-num_clients_options = [3,5]#,10]
-num_samples_options = [1000,2000]#,5000]
+num_clients_options = [3] #,10]
+num_samples_options = [100,300,500] #,5000]
 
 #pl.Config.set_tbl_rows(20)
 

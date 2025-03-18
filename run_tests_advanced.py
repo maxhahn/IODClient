@@ -1,5 +1,5 @@
 import dgp
-from fedci import run_test, run_configured_test, run_test_on_data
+from fedci import run_test, run_configured_test
 from tqdm import tqdm
 from tqdm.contrib.concurrent import process_map
 import itertools
@@ -194,11 +194,11 @@ nc966 = dgp.NodeCollection('C-C Unc. Conf. Dep. : X (<- Z ->) Y', [node1, node2,
 
 # Setup Configs
 node_collections = [
-    nc911, nc912, nc913, nc914, nc915, nc916,
-    nc921, nc922, nc923, nc924, nc925, nc926,
-    nc931, nc932, nc933, nc934, nc935, nc936,
-    nc941, nc942, nc943, nc944, nc945, nc946,
-    nc951, nc952, nc953, nc954, nc955, nc956,
+    nc911, nc912, nc913, nc914, #nc915, nc916,
+    nc921, nc922, nc923, nc924, #nc925, nc926,
+    nc931, nc932, nc933, nc934, #nc935, nc936,
+    nc941, nc942, nc943, nc944, #nc945, nc946,
+    nc951, nc952, nc953, nc954, #nc955, nc956,
     #nc961, nc962, nc963, nc964, nc965, nc966,
 ]
 
@@ -212,8 +212,8 @@ def run():
 
 
 num_samples = [
-    #100,
-    #200, 300, 400,
+    100,
+    200, 300, 400,
     500, #600, 700, 800,
     750,
     #900,
@@ -223,10 +223,15 @@ num_samples = [
     #1750,
     2000,
     #2500,
-    3000
+    3000,
+
+    #5000,
+    #7500,
+    #10000
 ]
 num_clients = [
-    1, 3, 5
+    #1, 3, 5,
+    7
 ]
 
 file_info = ('./experiments/fed-v-fisher/', 'tests.ndjson')
@@ -242,6 +247,6 @@ num_runs = 50
 configurations *= num_runs
 
 # Run tests
-process_map(run_configured_test, configurations, max_workers=10, chunksize=3)
+process_map(run_configured_test, configurations, max_workers=5, chunksize=1)
 #for i, configuration in enumerate(tqdm(configurations)):
 #    run_configured_test(configuration)

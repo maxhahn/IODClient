@@ -15,7 +15,7 @@ from dgp import NodeCollection
 from .server import Server
 from .client import Client
 from .evaluation import get_symmetric_likelihood_tests, get_riod_tests, compare_tests_to_truth, fisher_test_combination
-from .env import DEBUG, EXPAND_ORDINALS, LOG_R, LR, RIDGE
+from .env import DEBUG, EXPAND_ORDINALS, LOG_R, LR, RIDGE, NO_WRITE
 
 import rpy2.rinterface_lib.callbacks as cb
 
@@ -24,7 +24,7 @@ def partition_dataframe_advanced(dgp_nodes, n_samples, n_clients):
         if n <= 0:
             raise ValueError("The number of splits 'n' must be greater than 0.")
 
-        min_perc = 0.03
+        min_perc = 0.15
         percentiles = np.random.uniform(0,1,n)
         percentiles = (percentiles+min_perc)
         percentiles = percentiles/np.sum(percentiles)
@@ -50,12 +50,12 @@ def partition_dataframe_advanced(dgp_nodes, n_samples, n_clients):
             continue
 
         for d in client_data:
-            if len(d) < 5:
+            if len(d) < 2:
                 is_valid = False
                 break
-            if len(d.select(cs.boolean() | cs.string() | cs.integer())) == 0:
+            if len(d.select(cs.boolean())) == 0:
                 continue
-            if any([l < 3 for l in d.group_by(cs.boolean() | cs.string() | cs.integer()).len()['len'].to_list()]):
+            if any([l < 2 for l in d.group_by(cs.boolean()).len()['len'].to_list()]):
                 is_valid = False
                 break
     return df, client_data, split_percs
@@ -201,7 +201,7 @@ def run_test_on_data(dgp_nodes,
         'split_percentages': split_percentages
     }
 
-    if DEBUG == 0:
+    if DEBUG == 0 and NO_WRITE == 0:
         write_result(result, target_directory, target_file)
 
     return list(zip(sorted(fed_tests), sorted(fisher_tests), sorted(baseline_tests)))
