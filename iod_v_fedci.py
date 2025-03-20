@@ -174,9 +174,14 @@ def get_dataframe_from_r(test_setup, num_samples):
         var_levels += [random.choice(potential_var_types[var_type])]
     succeeded = False
     cnt = 0
+    #print(var_types)
     while not succeeded:
         cnt += 1
-        dat = get_data_f(raw_true_pag, num_samples, var_levels)
+        try:
+            dat = get_data_f(raw_true_pag, num_samples, var_levels, 'mixed' if cnt < 3 else 'continuous')
+        except ro.rinterface_lib.embedded.RRuntimeError as e:
+            continue
+        #dat = get_data_f(raw_true_pag, num_samples, var_levels, 'mixed') # continuos mixed
         #print('---')
         #print(dat)
         # "CAN ACTUALLY BE NULL, JUST RETRY"
@@ -237,7 +242,8 @@ def get_data(test_setup, num_samples, num_clients):
         cols = data.columns
         cols_c1 = test_setup[1][0]
         cols_c2 = test_setup[1][1]
-        cols_cx = [sorted(cols, key=lambda k: random.random())[:-1] for _ in range(num_clients-2)]
+        cols_cx = [test_setup[1][i%2] for i in range(num_clients-2)]
+        #cols_cx = [sorted(cols, key=lambda k: random.random())[:-1] for _ in range(num_clients-2)]
 
         split_dfs, split_percs = split_dataframe(data, num_clients)
         client_data = [df.select(c) for df, c in zip(split_dfs, [cols_c1, cols_c2] + cols_cx)]
@@ -247,7 +253,7 @@ def get_data(test_setup, num_samples, num_clients):
             continue
 
         for d in client_data:
-            if len(d) < 2:
+            if len(d) < 5:
                 is_valid = False
                 break
             if len(d.select(cs.boolean())) == 0:
@@ -255,6 +261,8 @@ def get_data(test_setup, num_samples, num_clients):
             if any([l < 2 for l in d.group_by(cs.boolean()).len()['len'].to_list()]):
                 is_valid = False
                 break
+    # 126
+
     return (pag, sorted(data.columns)), (client_data, split_percs)
 
 
@@ -319,7 +327,7 @@ def mxm_ci_test(df):
         labels = list(result['labels'])
     return df_pvals, labels
 
-def run_pval_agg_iod(true_pag, true_labels, users, dfs, client_labels, alpha):
+def run_pval_agg_iod(true_pag, true_labels, users, dfs, client_labels, alpha, procedure):
     #ro.r['source']('./aggregation.r')
     #aggregate_ci_results_f = ro.globalenv['aggregate_ci_results']
 
@@ -333,7 +341,7 @@ def run_pval_agg_iod(true_pag, true_labels, users, dfs, client_labels, alpha):
         r_matrix = ro.r.matrix(ro.FloatVector(true_pag_np.flatten()), nrow=len(true_labels), ncol=len(true_labels))
         colnames = ro.StrVector(true_labels)
 
-        result = aggregate_ci_results_f(r_matrix, colnames, label_list, r_dfs, alpha)
+        result = aggregate_ci_results_f(r_matrix, colnames, label_list, r_dfs, alpha, procedure)
 
         g_pag_list = [x[1].tolist() for x in result['G_PAG_List'].items()]
         g_pag_labels = [list(x[1]) for x in result['G_PAG_Label_List'].items()]
@@ -365,7 +373,7 @@ def run_pval_agg_iod(true_pag, true_labels, users, dfs, client_labels, alpha):
         "MAX_FDR": max(g_pag_fdr) if len(g_pag_fdr) > 0 else None,
     }
 
-def run_riod(true_pag, true_labels, df, labels, client_labels, alpha):
+def run_riod(true_pag, true_labels, df, labels, client_labels, alpha, procedure):
     # ro.r['source']('./aggregation.r')
     # iod_on_ci_data_f = ro.globalenv['iod_on_ci_data']
     # Reading and processing data
@@ -390,7 +398,7 @@ def run_riod(true_pag, true_labels, df, labels, client_labels, alpha):
         r_matrix = ro.r.matrix(ro.FloatVector(true_pag_np.flatten()), nrow=len(true_labels), ncol=len(true_labels))
         colnames = ro.StrVector(true_labels)
 
-        result = iod_on_ci_data_f(r_matrix, colnames, label_list, suff_stat, alpha)
+        result = iod_on_ci_data_f(r_matrix, colnames, label_list, suff_stat, alpha, procedure)
 
         g_pag_list = [x[1].tolist() for x in result['G_PAG_List'].items()]
         g_pag_labels = [list(x[1]) for x in result['G_PAG_Label_List'].items()]
@@ -501,8 +509,10 @@ def evaluate_prediction(true_pag, pred_pag, true_labels, pred_labels):
 def log_results(
     target_dir,
     target_file,
-    metrics,
-    metrics_pvalagg,
+    metrics_fedci,
+    metrics_fedci_ot,
+    metrics_fisher,
+    metrics_fisher_ot,
     alpha,
     num_samples,
     num_clients,
@@ -513,8 +523,10 @@ def log_results(
         "num_samples": num_samples,
         "num_clients": num_clients,
         "split_percentiles": data_percs,
-        "metrics_fedci": metrics,
-        "metrics_pvalagg": metrics_pvalagg
+        "metrics_fedci": metrics_fedci,
+        "metrics_fedci_ot": metrics_fedci_ot,
+        "metrics_fisher": metrics_fisher,
+        "metrics_fisher_ot": metrics_fisher_ot
     }
 
     with open(Path(target_dir) / target_file, "a") as f:
@@ -525,11 +537,15 @@ def log_results(
 
 test_setups = list(zip(truePAGs, subsetsList))
 
-NUM_TESTS = 10
+#test_setups = test_setups[:1]
+NUM_TESTS = 1
 ALPHA = 0.05
 
+# TODO: run the tests done so far for fedci with colliders with order IOD
+# 500,1000,5000,10000 with 2,4 clients 10 times
+
 #test_setups = test_setups[5:10]
-data_dir = './experiments/simulation/pvalagg_vs_fedci_new'
+data_dir = './experiments/simulation/iod_comparison'
 data_file_pattern = '{}-{}-{}.ndjson'
 
 import datetime
@@ -539,6 +555,10 @@ now = int(datetime.datetime.utcnow().timestamp()*1e3)
 data_file_pattern = str(now) + '-' + data_file_pattern
 
 def run_comparison(setup):
+    #print(setup)
+
+    #np_matrix = np.array(setup[3][0])
+    #print(np_matrix)
     idx, data_dir, data_file_pattern, test_setup, num_samples, num_clients = setup
     data_file = data_file_pattern.format(idx, num_samples, num_clients)
     (true_pag, all_labels), (client_data, data_percs) = get_data(test_setup, num_samples, num_clients)
@@ -550,13 +570,25 @@ def run_comparison(setup):
     client_labels = {id: sorted(list(schema.keys())) for id, schema in server.client_schemas.items()}
     df_fedci = server_results_to_dataframe(all_labels_fedci, results_fedci)
 
-    metrics = run_riod(
+    metrics_fedci = run_riod(
         true_pag,
         all_labels,
         df_fedci,
         all_labels_fedci,
         client_labels,
-        ALPHA)
+        ALPHA,
+        procedure='original'
+    )
+
+    metrics_fedci_ot = run_riod(
+        true_pag,
+        all_labels,
+        df_fedci,
+        all_labels_fedci,
+        client_labels,
+        ALPHA,
+        procedure='orderedtriplets'
+    )
 
     def run_client(client_data):
         server = fedci.Server({'1': fedci.Client(client_data)})
@@ -574,23 +606,34 @@ def run_comparison(setup):
     #client_ci_info = [run_client(d) for d in client_data]
     client_ci_dfs, client_ci_labels = zip(*client_ci_info)
 
-    metrics_pvalagg = run_pval_agg_iod(
+    metrics_fisher_ot = run_pval_agg_iod(
         true_pag,
         all_labels,
         list(client_labels.keys()),
         client_ci_dfs,
         client_ci_labels,
-        ALPHA
+        ALPHA,
+        procedure='orderedtriplets'
     )
         #except:
         #metrics_pvalagg = None
 
+    metrics_fisher = run_pval_agg_iod(
+        true_pag,
+        all_labels,
+        list(client_labels.keys()),
+        client_ci_dfs,
+        client_ci_labels,
+        ALPHA,
+        procedure='original'
+    )
+
     #print(found_correct_pag_fedci, found_correct_pag_pvalagg)
 
-    log_results(data_dir, data_file, metrics, metrics_pvalagg, ALPHA, num_samples, num_clients, data_percs)
+    log_results(data_dir, data_file, metrics_fedci, metrics_fedci_ot, metrics_fisher, metrics_fisher, ALPHA, num_samples, num_clients, data_percs)
 
-num_clients_options = [3] #,10]
-num_samples_options = [100,300,500] #,5000]
+num_clients_options = [2,4] #,10] #,10]
+num_samples_options = [500,1000,5000,10000] #,5000][50_000]
 
 #pl.Config.set_tbl_rows(20)
 
@@ -601,11 +644,10 @@ configurations = [(data_dir, data_file_pattern) + c for c in configurations]
 configurations = [(i,) + c for i in range(NUM_TESTS) for c in configurations]
 
 from tqdm.contrib.concurrent import process_map
-
 #from fedci.env import OVR, EXPAND_ORDINALS
 #print(OVR, EXPAND_ORDINALS)
 
-for configuration in tqdm(configurations):
-    run_comparison(configuration)
+#for configuration in tqdm(configurations):
+#    run_comparison(configuration)
 
-#process_map(run_comparison, configurations, max_workers=10, chunksize=3)
+process_map(run_comparison, configurations, max_workers=4, chunksize=1)

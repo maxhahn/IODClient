@@ -5,45 +5,74 @@ pl.Config.set_tbl_rows(100)
 
 # TODO: get containsTheTrueGraph in temp.r and return it
 
-json_file = "experiments/simulation/pvalagg_vs_fedci_new/*.ndjson"
-#schema = pl.read_ndjson("experiments/simulation/pvalagg_vs_fedci/1738847995495-0-300-3.ndjson").schema
-df = pl.read_ndjson(json_file)#, schema=schema)
-print(df['metrics_fedci'][0])
+json_file = "experiments/simulation/iod_comparison/*.ndjson"
+schema = pl.read_ndjson("experiments/simulation/iod_comparison/1742481776605-0-10000-2.ndjson").schema
+df = pl.read_ndjson(json_file, schema=schema)
+
+
+#df = df.filter(pl.col('num_samples') < 50_000)
+
 print(len(df))
+
+
 
 # TODO: get number of predictions for each sample
 
 #print(df)
 #df = pl.scan_ndjson(json_file).with_columns(pl.col('metrics_fedci').fill_null(pl.struct())).collect()
-grouping_keys = ['num_samples', 'num_clients', 'alpha']
+grouping_keys = ['num_clients', 'num_samples']
 
-df = df.drop('split_percentiles')
+#df = df.drop('split_percentiles')
+
+df = df.with_columns(max_split_percentile=pl.col('split_percentiles').list.max())
+df = df.with_columns(max_split_percentile_bucket=pl.col('max_split_percentile').qcut(10))
 
 
-df = df.with_columns(has_prediction_fedci=pl.col('metrics_fedci').struct.field('SHD').list.len() > 0)
-df = df.with_columns(has_prediction_pvalagg=pl.col('metrics_pvalagg').struct.field('SHD').list.len() > 0)
+df = df.with_columns(num_prediction_fedci=pl.col('metrics_fedci').struct.field('SHD').list.len())
+df = df.with_columns(num_prediction_fedci_ot=pl.col('metrics_fedci').struct.field('SHD').list.len())
+df = df.with_columns(num_prediction_fisher=pl.col('metrics_fisher').struct.field('SHD').list.len())
+df = df.with_columns(num_prediction_fisher_ot=pl.col('metrics_fisher_ot').struct.field('SHD').list.len())
+
+df = df.with_columns(has_prediction_fedci=pl.col('num_prediction_fedci') > 0)
+df = df.with_columns(has_prediction_fedci_ot=pl.col('num_prediction_fedci_ot') > 0)
+df = df.with_columns(has_prediction_fisher=pl.col('num_prediction_fisher') > 0)
+df = df.with_columns(has_prediction_fisher_ot=pl.col('num_prediction_fisher_ot') > 0)
 
 dfx = df
 dfx = dfx.with_columns(
     found_correct_pag_fedci=pl.col('metrics_fedci').struct.field('found_correct'),
-    found_correct_pag_pvalagg=pl.col('metrics_pvalagg').struct.field('found_correct')
+    found_correct_pag_fedci_ot=pl.col('metrics_fedci_ot').struct.field('found_correct'),
+    found_correct_pag_fisher=pl.col('metrics_fisher').struct.field('found_correct'),
+    found_correct_pag_fisher_ot=pl.col('metrics_fisher_ot').struct.field('found_correct')
 )
 
-print(dfx.select('has_prediction_fedci', 'has_prediction_pvalagg').mean())
-print(dfx.group_by('has_prediction_fedci', 'has_prediction_pvalagg').len())
-print(dfx.select('found_correct_pag_fedci', 'found_correct_pag_pvalagg').mean())
+print(dfx.select(cs.starts_with('has_prediction_')).mean())
+print(dfx.group_by('num_clients', 'num_samples').agg(cs.starts_with('has_prediction_').mean()).sort('num_clients', 'num_samples'))
+#print(dfx.group_by(cs.starts_with('has_prediction_')).len())
+print(dfx.select(cs.starts_with('found_correct_')).mean())
 
 # only where data exists
 #df = df.filter(pl.col('has_prediction_fedci') & pl.col('has_prediction_pvalagg'))
 
 df = df.with_columns(
     pl.col('metrics_fedci').struct.unnest().name.prefix('fedci_'),
-    pl.col('metrics_pvalagg').struct.unnest().name.prefix('pvalagg_'),
-).drop('metrics_fedci', 'metrics_pvalagg')
+    pl.col('metrics_fedci_ot').struct.unnest().name.prefix('fedci_ot'),
+    pl.col('metrics_fisher').struct.unnest().name.prefix('fisher'),
+    pl.col('metrics_fisher_ot').struct.unnest().name.prefix('fisher_ot'),
+).drop('metrics_fedci', 'metrics_fedci_ot', 'metrics_fisher', 'metrics_fisher_ot')
 
-df = df.drop((cs.starts_with('fedci_') | cs.starts_with('pvalagg_')) - (cs.contains('_MEAN_') | cs.contains('_MIN_') | cs.contains('_MAX_')))
+df = df.drop((cs.starts_with('fedci_') | cs.starts_with('iod_')) - (cs.contains('_MEAN_') | cs.contains('_MIN_') | cs.contains('_MAX_')))
 
-print(df.head())
+#print(df.head())
+
+dfx = df.group_by('num_clients', 'num_samples', 'max_split_percentile_bucket').agg(cs.ends_with('MIN_SHD').mean())
+print(dfx.sort('num_clients', 'num_samples', 'max_split_percentile_bucket'))
+
+dfx = df.group_by('num_clients', 'num_samples').agg(cs.ends_with('MIN_SHD').mean())
+print(dfx.sort('num_clients', 'num_samples'))
+
+#dfx = df.group_by('num_samples', 'num_clients').agg(cs.ends_with('MIN_SHD').mean())
+#print(dfx.sort('num_samples', 'num_clients'))
 
 asd
 df = df.with_row_index()
@@ -60,6 +89,17 @@ df = df.with_columns(
     metric=pl.col('metric').str.split('_').list.get(2)
 )
 #print(df.head())
+
+"""
+Plot Ideas - each also per approach:
+ - correct_pag_hits per sample size
+ - number_of_predictions per sample size ?
+ - SHD per sample size
+
+ - How good is the SHD per algorithm
+ - How good is the SHD per algorithm when others did not predict anything
+ - How good is the SHD when all have a prediction
+"""
 
 
 #df = df.join(df_fedci, on=['index'], how='left')
