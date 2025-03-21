@@ -106,7 +106,7 @@ iod_on_ci_data <- function(true_pag_amat, true_pag_cols, labelList_, suffStat, a
     rownames(true_pag_amat) <- colnames(true_pag_amat)
 
     suffStat$labelList <- labelList
-    iod_out <- IOD(labelList, suffStat, alpha, procedure)
+    iod_out <- IOD(labelList, suffStat, alpha, procedure=procedure)
 
     index <- 1
     iod_out$G_PAG_Label_List <- list()

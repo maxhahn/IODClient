@@ -6,9 +6,10 @@ pl.Config.set_tbl_rows(100)
 # TODO: get containsTheTrueGraph in temp.r and return it
 
 json_file = "experiments/simulation/iod_comparison/*.ndjson"
-schema = pl.read_ndjson("experiments/simulation/iod_comparison/1742481776605-0-10000-2.ndjson").schema
-df = pl.read_ndjson(json_file, schema=schema)
+#schema = pl.read_ndjson("experiments/simulation/iod_comparison/1742481776605-0-10000-2.ndjson").schema
+df = pl.read_ndjson(json_file)#, schema=schema)
 
+print(df.columns)
 
 #df = df.filter(pl.col('num_samples') < 50_000)
 
@@ -56,12 +57,12 @@ print(dfx.select(cs.starts_with('found_correct_')).mean())
 
 df = df.with_columns(
     pl.col('metrics_fedci').struct.unnest().name.prefix('fedci_'),
-    pl.col('metrics_fedci_ot').struct.unnest().name.prefix('fedci_ot'),
-    pl.col('metrics_fisher').struct.unnest().name.prefix('fisher'),
-    pl.col('metrics_fisher_ot').struct.unnest().name.prefix('fisher_ot'),
+    pl.col('metrics_fedci_ot').struct.unnest().name.prefix('fedci_ot_'),
+    pl.col('metrics_fisher').struct.unnest().name.prefix('fisher_'),
+    pl.col('metrics_fisher_ot').struct.unnest().name.prefix('fisher_ot_'),
 ).drop('metrics_fedci', 'metrics_fedci_ot', 'metrics_fisher', 'metrics_fisher_ot')
 
-df = df.drop((cs.starts_with('fedci_') | cs.starts_with('iod_')) - (cs.contains('_MEAN_') | cs.contains('_MIN_') | cs.contains('_MAX_')))
+df = df.drop((cs.starts_with('fedci_') | cs.starts_with('fisher_')) - (cs.contains('_MEAN_') | cs.contains('_MIN_') | cs.contains('_MAX_')))
 
 #print(df.head())
 

@@ -177,27 +177,25 @@ def get_dataframe_from_r(test_setup, num_samples):
     #print(var_types)
     while not succeeded:
         cnt += 1
+        # get data from R function
         try:
-            dat = get_data_f(raw_true_pag, num_samples, var_levels, 'mixed' if cnt < 3 else 'continuous')
+            dat = get_data_f(raw_true_pag, num_samples, var_levels, 'continuous' if cnt > 2 else 'mixed')
         except ro.rinterface_lib.embedded.RRuntimeError as e:
             continue
-        #dat = get_data_f(raw_true_pag, num_samples, var_levels, 'mixed') # continuos mixed
-        #print('---')
-        #print(dat)
-        # "CAN ACTUALLY BE NULL, JUST RETRY"
+
+        # convert R result to pandas
         with (ro.default_converter + pandas2ri.converter).context():
             df = ro.conversion.get_conversion().rpy2py(dat[0])
-        #print(df)
+
+        # attempt to get correct dataframe
         try:
             df = pl.from_pandas(df)
         except:
-            if cnt > 10:
-                print(raw_true_pag)
             continue
 
         succeeded = True
     for var_name, var_type in var_types.items():
-        if var_type == 'continuous':
+        if cnt > 2 or var_type == 'continuous':
             df = df.with_columns(pl.col(var_name).cast(pl.Float64))
         elif var_type == 'binary':
             df = df.with_columns(pl.col(var_name) == 'A')
@@ -236,6 +234,7 @@ def get_data(test_setup, num_samples, num_clients):
 
     is_valid = False
     while not is_valid:
+        is_valid = True
         #data = nc.reset().get(num_samples)
         data = get_dataframe_from_r(test_setup, num_samples)
 
@@ -248,20 +247,23 @@ def get_data(test_setup, num_samples, num_clients):
         split_dfs, split_percs = split_dataframe(data, num_clients)
         client_data = [df.select(c) for df, c in zip(split_dfs, [cols_c1, cols_c2] + cols_cx)]
 
-        is_valid = not any([split.select(fail=pl.any_horizontal((cs.boolean() | cs.string() | cs.integer()).n_unique() == 1))['fail'][0] for split in client_data])
-        if not is_valid:
-            continue
+
+        # With this validity check, it is ensured that every client has the same number of n_uniques for all non-continuos cols
+        unique_values_in_data = data.select((cs.all() - cs.float()).n_unique())
+        if len(unique_values_in_data) == 0:
+            break
+        unique_values_in_data = unique_values_in_data.row(0, named=True)
 
         for d in client_data:
-            if len(d) < 5:
-                is_valid = False
+            if not is_valid:
                 break
-            if len(d.select(cs.boolean())) == 0:
+            unique_values_in_client = d.select((cs.all() - cs.float()).n_unique())
+            if len(unique_values_in_client) == 0:
                 continue
-            if any([l < 2 for l in d.group_by(cs.boolean()).len()['len'].to_list()]):
-                is_valid = False
-                break
-    # 126
+            for k,v in unique_values_in_client.row(0, named=True).items():
+                if v == 1 or unique_values_in_data[k] != v:
+                    is_valid = False
+                    break
 
     return (pag, sorted(data.columns)), (client_data, split_percs)
 
@@ -516,12 +518,14 @@ def log_results(
     alpha,
     num_samples,
     num_clients,
-    data_percs
+    data_percs,
+    pag_id
 ):
     result = {
         "alpha": alpha,
         "num_samples": num_samples,
         "num_clients": num_clients,
+        "pag_id": pag_id,
         "split_percentiles": data_percs,
         "metrics_fedci": metrics_fedci,
         "metrics_fedci_ot": metrics_fedci_ot,
@@ -535,7 +539,7 @@ def log_results(
         fcntl.flock(f, fcntl.LOCK_UN)
 
 
-test_setups = list(zip(truePAGs, subsetsList))
+test_setups = [(pag, subset, i) for i,(pag,subset) in enumerate(zip(truePAGs, subsetsList))]
 
 #test_setups = test_setups[:1]
 NUM_TESTS = 1
@@ -629,11 +633,11 @@ def run_comparison(setup):
     )
 
     #print(found_correct_pag_fedci, found_correct_pag_pvalagg)
+    pag_id = test_setup[2]
+    log_results(data_dir, data_file, metrics_fedci, metrics_fedci_ot, metrics_fisher, metrics_fisher_ot, ALPHA, num_samples, num_clients, data_percs, pag_id)
 
-    log_results(data_dir, data_file, metrics_fedci, metrics_fedci_ot, metrics_fisher, metrics_fisher, ALPHA, num_samples, num_clients, data_percs)
-
-num_clients_options = [2,4] #,10] #,10]
-num_samples_options = [500,1000,5000,10000] #,5000][50_000]
+num_clients_options = [2,4,8] #,10] #,10]
+num_samples_options = [500,1000,5000]#,10000] #,5000][50_000]
 
 #pl.Config.set_tbl_rows(20)
 

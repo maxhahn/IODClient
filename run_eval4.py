@@ -35,7 +35,7 @@ df = df.with_columns(
 )
 
 experiment_types = ['M-O', 'C-B', 'B-O', 'C-O', 'C-M']
-type_idx = 0
+type_idx = 3
 if type_idx >= 0:
     current_experiment_type = experiment_types[type_idx]
     df = df.filter(pl.col('experiment_type') == current_experiment_type)
