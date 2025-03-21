@@ -44,9 +44,9 @@ RUN R -e "\
     repos='http://cran.rstudio.com/', \
     dependencies=TRUE)"
 
-# Install rsvg and MXM with dependencies
+# Install rsvg with dependencies
 RUN R -e "\
-    install.packages(c('rsvg', 'MXM'), \
+    install.packages(c('rsvg'), \
     repos='http://cran.rstudio.com/', \
     dependencies=TRUE)"
 
@@ -61,8 +61,13 @@ RUN R -e "packages <- readLines('/tmp/requirements.r'); \
         dependencies=TRUE) \
     }"
 
-COPY install_mxm.r /tmp/install_mxm.r
-RUN Rscript /tmp/install_mxm.r
+#COPY install_mxm.r /tmp/install_mxm.r
+#RUN Rscript /tmp/install_mxm.r
+# Install MXM dependencies
+RUN R -e "\
+    install.packages(c('methods', 'stats', 'utils', 'survival', 'MASS', 'graphics', 'ordinal', 'nnet', 'quantreg', 'lme4', 'foreach', 'doParallel', 'parallel', 'relations', 'Rfast', 'visNetwork', 'energy', 'geepack', 'knitr', 'dplyr', 'bigmemory', 'coxme', 'Rfast2', 'Hmisc'), \
+    repos='http://cran.rstudio.com/', \
+    dependencies=TRUE)"
 
 RUN R -e "install.packages('remotes')"
 RUN R -e "remotes::install_github('IyarLin/simMixedDAG')"
@@ -76,6 +81,8 @@ RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
 COPY ./imports /r-imports
 WORKDIR /r-imports
 
+# Install MXM
+RUN R CMD INSTALL /r-imports/MXM_1.5.5.tar.gz
 # Install FCI Utils
 RUN R CMD INSTALL /r-imports/FCI.Utils_1.0.tar.gz
 # Install rIOD
