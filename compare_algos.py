@@ -23,8 +23,8 @@ import fedci
 
 # supress R log
 import rpy2.rinterface_lib.callbacks as cb
-cb.consolewrite_print = lambda x: None
-cb.consolewrite_warnerror = lambda x: None
+#cb.consolewrite_print = lambda x: None
+#cb.consolewrite_warnerror = lambda x: None
 
 #ro.r['source']('./load_pags.r')
 #load_pags = ro.globalenv['load_pags']
@@ -411,6 +411,7 @@ def run_riod(true_pag, true_labels, df, labels, client_labels, alpha, procedure)
 
         #print(true_labels, labels, g_pag_labels)
         found_correct_pag = bool(result['found_correct_pag'][0])
+        print(found_correct_pag)
         g_pag_shd = [x[1][0].item() for x in result['G_PAG_SHD'].items()]
         g_pag_for = [x[1][0].item() for x in result['G_PAG_FOR'].items()]
         g_pag_fdr = [x[1][0].item() for x in result['G_PAG_FDR'].items()]
@@ -579,8 +580,8 @@ def run_comparison(setup):
 
     data_file = data_file_pattern.format(data_id, 'result')
 
-    df1 = df1.sample(1_000)
-    df2 = df2.sample(1_000)
+    #df1 = df1.sample(1_000)
+    #df2 = df2.sample(1_000)
 
     client_data = [df1, df2]
 
@@ -659,19 +660,6 @@ def run_comparison(setup):
     c_df = c_df.with_columns(
         pvalue_fisher=(-2*(pl.col('pvalue').log() + pl.col('pvalue_right').log())).map_elements(lambda x: scipy.stats.chi2.sf(x, 4), return_dtype=pl.Float64)
     )
-    # c_df = c_df.with_columns(
-    #     pvalue_fisher=pl.when(
-    #         pl.col('pvalue').is_null()
-    #     ).then(
-    #         pl.col('pvalue_right')
-    #     ).when(
-    #         pl.col('pvalue_right').is_null()
-    #     ).then(
-    #         pl.col('pvalue')
-    #     ).otherwise(
-    #         (-2*(pl.col('pvalue').log() + pl.col('pvalue_right').log())).map_elements(lambda x: scipy.stats.chi2.sf(x, 4))
-    #     )
-    # )
 
     c_df = c_df.drop('pvalue', 'pvalue_right')
 
@@ -687,14 +675,7 @@ def run_comparison(setup):
         indep_fedci=pl.col('pvalue_fedci') > ALPHA
     ).drop('pvalue_fisher', 'pvalue_fedci')
 
-    df_faith.write_parquet('experiments/simulation/algo_comp_faith/' + data_id + '-faith-results.parquet')
-
-    # label_mapping = {str(i):l for i,l in enumerate(all_labels_fedci, start=1)}
-    # df_fedci = df_fedci.with_columns(
-    #     pl.col('X').cast(pl.Utf8).replace(label_mapping),
-    #     pl.col('Y').cast(pl.Utf8).replace(label_mapping),
-    #     pl.col('S').str.split(',').list.eval(pl.element().replace(label_mapping)).list.sort().list.join(','),
-    # )
+    df_faith.write_parquet('experiments/simulation/algo_comp_faith/' + data_id + '-result-{}faithful.parquet'.format("" if is_faithful else "un"))
 
     metrics_fisher_ot = run_pval_agg_iod(
         true_pag,
@@ -730,7 +711,7 @@ pag_lookup = {i: pag for i, pag in enumerate(truePAGs)}
 faithful_data = set([f.rpartition('-')[0] for f in os.listdir('experiments/datasets/faithful')])
 unfaithful_data = set([f.rpartition('-')[0] for f in os.listdir('experiments/datasets/unfaithful')])
 
-configurations = [(id, True) for id in faithful_data] + [(id, False) for id in unfaithful_data]
+configurations = [(id, True) for id in faithful_data]   # + [(id, False) for id in unfaithful_data]
 
 from tqdm.contrib.concurrent import process_map
 

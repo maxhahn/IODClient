@@ -176,7 +176,27 @@ aggregate_ci_results <- function(true_pag_amat, true_pag_cols, labelList_, ci_da
       index <- index + 1
     }
 
-    iod_out$found_correct_pag = containsTheTrueGraph(trueAdjM = true_pag_amat, iod_out$G_PAG_List)
+    #print(true_pag_amat)
+    #print(iod_out$G_PAG_List)
+
+    is_in_list <- FALSE
+    col_order = colnames(true_pag_amat)
+    for (adj_matrix in iod_out$G_PAG_List) {
+    #make sure that trueAdjM and theadj_matrix have the same sequence of vars
+    #new_order <- colnames(adj_matrix)
+    adj_matrix = adj_matrix[col_order, col_order]
+    #trueAdjM <- trueAdjM[new_order, new_order]
+    if (all(adj_matrix == true_pag_amat)) {
+        is_in_list <- TRUE
+        break
+      }
+    }
+
+    iod_out$found_correct_pag = is_in_list
+
+    #iod_out$found_correct_pag = containsTheTrueGraph(trueAdjM = true_pag_amat, iod_out$G_PAG_List)
+
+    #print(iod_out$found_correct_pag)
 
     iod_out
 }
@@ -214,8 +234,30 @@ iod_on_ci_data <- function(true_pag_amat, true_pag_cols, labelList_, suffStat, a
       index <- index + 1
     }
 
-    iod_out$found_correct_pag = containsTheTrueGraph(trueAdjM = true_pag_amat, iod_out$G_PAG_List)
+    #print(true_pag_amat)
+    #print(iod_out$G_PAG_List)
 
+    is_in_list <- FALSE
+    col_order = colnames(true_pag_amat)
+    for (adj_matrix in iod_out$G_PAG_List) {
+    #make sure that trueAdjM and theadj_matrix have the same sequence of vars
+    #new_order <- colnames(adj_matrix)
+    adj_matrix = adj_matrix[col_order, col_order]
+    #trueAdjM <- trueAdjM[new_order, new_order]
+    #print(true_pag_amat)
+    #print(adj_matrix)
+    #print('---')
+    if (all(adj_matrix == true_pag_amat)) {
+        is_in_list <- TRUE
+        break
+      }
+    }
+
+    iod_out$found_correct_pag = is_in_list
+
+    #iod_out$found_correct_pag = containsTheTrueGraph(trueAdjM = true_pag_amat, iod_out$G_PAG_List)
+
+    #print(iod_out$found_correct_pag)
     iod_out
 }
 

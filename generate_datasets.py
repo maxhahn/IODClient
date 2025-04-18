@@ -299,7 +299,7 @@ def generate_dataset(setup):
 
 #pl.Config.set_tbl_rows(20)
 
-num_samples_options = [50_000] #, 50_000, 100_000]
+num_samples_options = [100_000] #, 50_000, 100_000]
 
 configurations = list(itertools.product(test_setups, num_samples_options))
 configurations = [(data_dir, data_file_pattern) + c for c in configurations]
