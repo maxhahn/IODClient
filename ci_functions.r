@@ -7,11 +7,12 @@ library(graph)
 library(doFuture)
 library(gtools)
 library(rIOD)
+library(dagitty)
 
 #n_cores <- 8
 #plan("multicore", workers = n_cores, gc=TRUE)
 #options(error = function() traceback(3))
-get_data <- function(true_pag_amat, num_samples, variable_levels, mode) {
+get_datax <- function(true_pag_amat, num_samples, variable_levels, mode, coef_thresh) {
   #print(true_pag_amat)
   #print(type(true_pag_amat))
   #print(class(true_pag_amat))  # Should be "matrix"
@@ -23,20 +24,101 @@ get_data <- function(true_pag_amat, num_samples, variable_levels, mode) {
   #print(class(adag))  # Should be "dagitty"
   #print(str(adag))    # See internal structure
 
-
   f.args <- list()
   cols <- colnames(true_pag_amat)
   for (vari in 1:length(cols)) {
       var_name <- colnames(true_pag_amat)[vari]
       f.args[[var_name]] <- list(levels = variable_levels[[vari]])
-    }
+  }
+
+  f.args
 
   dat_out <- FCI.Utils::generateDatasetFromPAG(apag = true_pag_amat,
     N=num_samples,
     type = mode,#"continuous",#type = "mixed",
+    coef_thresh=coef_thresh,
     f.args = f.args
   )
   dat_out
+}
+
+get_data <- function(true_pag_amat, num_samples, variable_levels, mode, coef_thresh) {
+  set.seed(42)  # For reproducibility
+
+  var_levels  <- list()
+  cols <- colnames(true_pag_amat)
+  for (vari in 1:length(cols)) {
+      var_name <- colnames(true_pag_amat)[vari]
+      var_levels[[var_name]] <- variable_levels[[vari]]
+  }
+
+  # Convert PAG adjacency matrix to canonical DAG
+  adag <- dagitty::canonicalize(getMAG(true_pag_amat)$magg)$g
+  print(adag)
+
+  f.args <- list()
+  cols <- names(adag)
+
+  for (var_name in cols) {
+    f.args[[var_name]] <- list()
+    var_level = var_levels[[var_name]]
+    var_level = if (is.null(var_level)) 1 else var_level
+    f.args[[var_name]]$levels <- var_level
+
+
+    # Determine parents
+    parent_names <- parents(adag, var_name)
+
+    # Initialize betas
+    betas <- list()
+
+    if (length(parent_names) > 0) {
+      for (parent_name in parent_names) {
+        #k <- f.args[[var_name]]$levels
+        k <- f.args[[parent_name]]$levels
+        k = if (is.null(k)) 1 else k
+
+        if (k > 2) {
+          # Multinomial case: generate matrix of (k-1) rows × 1 column
+          coefs <- runif(k - 1, min = -1, max = 1)
+          while (any(abs(coefs) < coef_thresh)) {
+            coefs <- runif(k - 1, min = -1, max = 1)
+          }
+          beta_matrix <- matrix(coefs, nrow = k - 1, ncol = 1)
+          rownames(beta_matrix) <- paste0("L", 2:k)  # optional
+          colnames(beta_matrix) <- parent_name
+          betas[[parent_name]] <- beta_matrix
+        } else {
+          # Binary or continuous case: single scalar
+          coef <- runif(1, min = -1, max = 1)
+          while (abs(coef) < coef_thresh) {
+            coef <- runif(1, min = -1, max = 1)
+          }
+          betas[[parent_name]] <- coef
+        }
+      }
+    }
+
+    # Always set betas, even if empty
+    f.args[[var_name]]$betas <- betas
+  }
+
+  # Generate data
+  dat_out <- FCI.Utils::generateDataset(
+    adag = adag,
+    N = num_samples,
+    type = mode,
+    coef_thresh = 0.001,
+    f.args = f.args
+  )
+
+  return(dat_out)
+}
+
+
+msep <- function(true_pag_amat, x, y, s) {
+    result <- isMSeparated(true_pag_amat, x, y, s)
+    result
 }
 
 run_ci_test <- function(data, max_cond_set_cardinality, filedir, filename) {

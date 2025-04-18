@@ -1,4 +1,5 @@
 # Load PAGs
+from jinja2.runtime import V
 from typing_extensions import Doc
 import rpy2.robjects as ro
 from rpy2.robjects import numpy2ri
@@ -50,7 +51,7 @@ truePAGs, subsetsList = load_pags()
 
 subsetsList = [(sorted(tuple(x[0])), sorted(tuple(x[1]))) for x in subsetsList]
 
-def get_dataframe_from_r(test_setup, num_samples):
+def get_dataframe_from_r(test_setup, num_samples, mode='mixed'):
     raw_true_pag = test_setup[0]
     labels = sorted(list(set(test_setup[1][0] + test_setup[1][1])))
     potential_var_types = {'continuous': [1], 'binary': [2], 'ordinal': [3,4], 'nominal': [3,4]}
@@ -60,6 +61,7 @@ def get_dataframe_from_r(test_setup, num_samples):
         var_type = random.choice(list(potential_var_types.keys()))
         var_types[label] = var_type
         var_levels += [random.choice(potential_var_types[var_type])]
+
     succeeded = False
     cnt = 0
     #print(var_types)
@@ -67,9 +69,10 @@ def get_dataframe_from_r(test_setup, num_samples):
         cnt += 1
         # get data from R function
         try:
-            dat = get_data_f(raw_true_pag, num_samples, var_levels, 'continuous' if cnt > 2 else 'mixed')
+            dat = get_data_f(raw_true_pag, num_samples, var_levels, 'continuous' if cnt > 2 else mode, 0.3)
         except:# ro.rinterface_lib.embedded.RRuntimeError as e:
             continue
+
 
         # convert R result to pandas
         with (ro.default_converter + pandas2ri.converter).context():
@@ -80,7 +83,6 @@ def get_dataframe_from_r(test_setup, num_samples):
             df = pl.from_pandas(df)
         except:
             continue
-
         succeeded = True
     for var_name, var_type in var_types.items():
         if cnt > 2 or var_type == 'continuous':
@@ -160,7 +162,7 @@ def test_ci(num_samples, test_setup, alpha = 0.05):
     cnt = 0
     while True:
 
-        df = data = get_dataframe_from_r(test_setup, num_samples)
+        df = get_dataframe_from_r(test_setup, num_samples)#, mode='continuos')
 
         df1 = df[:len(df)//2]
         df2 = df[len(df)//2:]
@@ -201,11 +203,14 @@ def test_ci(num_samples, test_setup, alpha = 0.05):
         #print(result_df2)
 
         result_df = result_df1.join(result_df2, on=['ord', 'X', 'Y', 'S'], how='full', coalesce=True)
+        #print(labels1, labels2)
+        #print(result_df.collect())
+
 
         result_df = result_df.with_columns(indep=pl.when(
-            (pl.col('pvalue') > alpha) & (pl.col('pvalue_right') > alpha)
+            ((pl.col('pvalue') > alpha) | pl.col('pvalue').is_null()) & ((pl.col('pvalue_right') > alpha) | pl.col('pvalue_right').is_null())
         ).then(pl.lit(True)).when(
-            (pl.col('pvalue') < alpha) & (pl.col('pvalue_right') < alpha)
+            ((pl.col('pvalue') < alpha) | pl.col('pvalue').is_null()) & ((pl.col('pvalue_right') < alpha) | pl.col('pvalue_right').is_null())
         ).then(pl.lit(False)).otherwise(pl.lit(None)))
 
         result_df = result_df.drop('pvalue', 'pvalue_right')
@@ -216,21 +221,21 @@ def test_ci(num_samples, test_setup, alpha = 0.05):
         result_df = result_df.join(result_df_intersect, on=['ord', 'X', 'Y', 'S'], how='anti')
         result_df = pl.concat([result_df, result_df_intersect]).collect()
 
-        print(f'{100-(result_df["indep"].null_count()/len(result_df))*100:.2f}% data filled')
-        if result_df['indep'].mean() > 0.8:
+        if (result_df["indep"].null_count()/len(result_df)) == 0:
             break
         if cnt > 20:
-            print(f'Stopping with {result_df["indep"].null_count()/len(result_df)}% data filled')
+            print(f'Stopping with {100-(result_df["indep"].null_count()/len(result_df))*100:.2f}% data filled')
+            #print(f'Stopping with {result_df["indep"].null_count()/len(result_df)}% data filled')
         cnt += 1
 
-    return df1, df2, result_df
+    return df1.select(labels1), df2.select(labels2), result_df
 
 
 test_setups = [(pag, subset, i) for i,(pag,subset) in enumerate(zip(truePAGs, subsetsList))]
 #test_setups = test_setups[:1]
 
 #test_setups = test_setups[:1]
-NUM_TESTS = 1
+NUM_TESTS = 10
 ALPHA = 0.05
 
 # TODO: run the tests done so far for fedci with colliders with order IOD
@@ -244,30 +249,57 @@ import polars as pl
 now = int(datetime.datetime.utcnow().timestamp()*1e3)
 data_file_pattern = str(now) + '-' + data_file_pattern
 
-
-
 def generate_dataset(setup):
     idx, data_dir, data_file_pattern, test_setup, num_samples = setup
     #data_file = data_file_pattern.format(idx, num_samples)
-    data = get_dataframe_from_r(test_setup, num_samples)
+    #data = get_dataframe_from_r(test_setup, num_samples)
 
-    data1, data2, df_faithful = test_ci(data, test_setup)
-
+    #data1, data2, df_faithful = test_ci(data, test_setup)
+    data1, data2, df_faithful = test_ci(num_samples, test_setup)
 
     df_msep = pl.read_parquet('./experiments/pag_msep/pag-{}.parquet'.format(test_setup[2]))
     df_msep = df_msep.with_columns(pl.col('S').list.join(','))
+    df_msep = df_msep.with_columns(
+        ord=pl.when(
+            pl.col('S').str.len_chars() == 0).then(
+                pl.lit(0)
+            ).otherwise(
+                pl.col('S').str.count_matches(',') + 1
+            )
+    )
+    #print(df_msep)
 
-    df_faithful = df_faithful.join(df_msep, on=['X', 'Y', 'S'], how='left', coalesce=True)
-    print(df_faithful)
+    #print(len(df_msep))
+    # do full outer join here if you want to check all possible combinations
+    df_faithful = df_faithful.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
+    df_faithful = df_faithful.sort('ord', 'X', 'Y', 'S')
+    #print(data1.columns, data2.columns)
+    #print(df_faithful)
     #print(data)
-    asd
+    #asd
+
+    is_faithful = df_faithful.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(df_faithful)
+
+    now = int(datetime.datetime.utcnow().timestamp()*1e3)
+
+    if is_faithful:
+        df_faithful.write_parquet('./experiments/datasets/faithful/{}-{}-{}-faith.parquet'.format(now, test_setup[2], num_samples))
+        data1.write_parquet('./experiments/datasets/faithful/{}-{}-{}-d1.parquet'.format(now, test_setup[2], num_samples))
+        data2.write_parquet('./experiments/datasets/faithful/{}-{}-{}-d2.parquet'.format(now, test_setup[2], num_samples))
+    else:
+        df_faithful.write_parquet('./experiments/datasets/unfaithful/{}-{}-{}-faith.parquet'.format(now, test_setup[2], num_samples))
+        data1.write_parquet('./experiments/datasets/unfaithful/{}-{}-{}-d1.parquet'.format(now, test_setup[2], num_samples))
+        data2.write_parquet('./experiments/datasets/unfaithful/{}-{}-{}-d2.parquet'.format(now, test_setup[2], num_samples))
+
+
+
     # GET M SEPARABILITY
     #df = is_m_separable(test_setup)
     #df.write_parquet('./experiments/pag_msep/pag-{}.parquet'.format(test_setup[2]))
 
 #pl.Config.set_tbl_rows(20)
 
-num_samples_options = [10_000] #, 50_000, 100_000]
+num_samples_options = [50_000] #, 50_000, 100_000]
 
 configurations = list(itertools.product(test_setups, num_samples_options))
 configurations = [(data_dir, data_file_pattern) + c for c in configurations]

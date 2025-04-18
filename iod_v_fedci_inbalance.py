@@ -179,7 +179,7 @@ def get_dataframe_from_r(test_setup, num_samples):
         cnt += 1
         # get data from R function
         try:
-            dat = get_data_f(raw_true_pag, num_samples, var_levels, 'continuous' if cnt > 2 else 'mixed')
+            dat = get_data_f(raw_true_pag, num_samples, var_levels, 'continuous')# if cnt > 2 else 'mixed')
         except ro.rinterface_lib.embedded.RRuntimeError as e:
             continue
 
@@ -195,7 +195,8 @@ def get_dataframe_from_r(test_setup, num_samples):
 
         succeeded = True
     for var_name, var_type in var_types.items():
-        if cnt > 2 or var_type == 'continuous':
+        #if cnt > 2 or var_type == 'continuous':
+        if True or var_type == 'continuous':
             df = df.with_columns(pl.col(var_name).cast(pl.Float64))
         elif var_type == 'binary':
             df = df.with_columns(pl.col(var_name) == 'A')
@@ -206,16 +207,16 @@ def get_dataframe_from_r(test_setup, num_samples):
             df = df.with_columns(pl.col(var_name).cast(pl.Utf8))
     return df
 
-def get_data(test_setup, num_samples, num_clients):
-    def split_dataframe(df, n):
+def get_data(test_setup, num_samples, num_clients, split_percs):
+    def split_dataframe(df, n, percentiles):
         if n <= 0:
             raise ValueError("The number of splits 'n' must be greater than 0.")
 
-        min_perc = 0.03
-        percentiles = np.random.uniform(0,1,n)
-        percentiles = (percentiles+min_perc)
-        percentiles = percentiles/np.sum(percentiles)
-        split_percentiles = percentiles.tolist()
+        # min_perc = 0.03
+        # percentiles = np.random.uniform(0,1,n)
+        # percentiles = (percentiles+min_perc)
+        # percentiles = percentiles/np.sum(percentiles)
+        # split_percentiles = percentiles.tolist()
         percentiles = np.cumsum(percentiles)
         percentiles = [0] + percentiles.tolist()[:-1] + [1]
 
@@ -225,7 +226,7 @@ def get_data(test_setup, num_samples, num_clients):
             end = int(percentiles[i+1]*len(df))
             splits.append(df[start:end])
 
-        return splits, split_percentiles
+        return splits
 
     #pag = floatmatrix_to_2dlist(test_setup[0])
     #nc = pag_to_node_collection(pag)
@@ -244,7 +245,7 @@ def get_data(test_setup, num_samples, num_clients):
         cols_cx = [test_setup[1][i%2] for i in range(num_clients-2)]
         #cols_cx = [sorted(cols, key=lambda k: random.random())[:-1] for _ in range(num_clients-2)]
 
-        split_dfs, split_percs = split_dataframe(data, num_clients)
+        split_dfs = split_dataframe(data, num_clients, split_percs)
         client_data = [df.select(c) for df, c in zip(split_dfs, [cols_c1, cols_c2] + cols_cx)]
 
 
@@ -540,17 +541,17 @@ def log_results(
 
 
 test_setups = [(pag, subset, i) for i,(pag,subset) in enumerate(zip(truePAGs, subsetsList))]
-test_setups = test_setups[:1]
+#test_setups = test_setups[:1]
 
 #test_setups = test_setups[:1]
-NUM_TESTS = 100
+NUM_TESTS = 5
 ALPHA = 0.05
 
 # TODO: run the tests done so far for fedci with colliders with order IOD
 # 500,1000,5000,10000 with 2,4 clients 10 times
 
 #test_setups = test_setups[5:10]
-data_dir = './experiments/simulation/iod_comparison_single_pag'
+data_dir = './experiments/simulation/iod_comparison_inbalance2'
 data_file_pattern = '{}-{}-{}.ndjson'
 
 import datetime
@@ -564,9 +565,9 @@ def run_comparison(setup):
 
     #np_matrix = np.array(setup[3][0])
     #print(np_matrix)
-    idx, data_dir, data_file_pattern, test_setup, num_samples, num_clients = setup
+    idx, data_dir, data_file_pattern, test_setup, num_samples, num_clients, split_percs = setup
     data_file = data_file_pattern.format(idx, num_samples, num_clients)
-    (true_pag, all_labels), (client_data, data_percs) = get_data(test_setup, num_samples, num_clients)
+    (true_pag, all_labels), (client_data, data_percs) = get_data(test_setup, num_samples, num_clients, split_percs)
 
     server = setup_server(client_data)
 
@@ -637,12 +638,12 @@ def run_comparison(setup):
     pag_id = test_setup[2]
     log_results(data_dir, data_file, metrics_fedci, metrics_fedci_ot, metrics_fisher, metrics_fisher_ot, ALPHA, num_samples, num_clients, data_percs, pag_id)
 
-num_clients_options = [2,4,8] #,10] #,10]
-num_samples_options = [500,1000,2500,5000]#,10000] #,5000][50_000]
-
+num_clients_options = [4] #,10] #,10]
+num_samples_options = [5000] #,10000] #,5000][50_000]
+split_perc_options = [[0.25, 0.25, 0.25, 0.25], [0.3,0.3,0.2,0.2], [0.35,0.35,0.15,0.15], [0.4,0.4,0.1,0.1], [0.45,0.45,0.05,0.05]]
 #pl.Config.set_tbl_rows(20)
 
-configurations = list(itertools.product(test_setups, num_samples_options, num_clients_options))
+configurations = list(itertools.product(test_setups, num_samples_options, num_clients_options, split_perc_options))
 
 configurations = [(data_dir, data_file_pattern) + c for c in configurations]
 
@@ -652,7 +653,7 @@ from tqdm.contrib.concurrent import process_map
 #from fedci.env import OVR, EXPAND_ORDINALS
 #print(OVR, EXPAND_ORDINALS)
 
-#for configuration in tqdm(configurations):
-#    run_comparison(configuration)
+for configuration in tqdm(configurations):
+    run_comparison(configuration)
 
-process_map(run_comparison, configurations, max_workers=4, chunksize=1)
+#process_map(run_comparison, configurations, max_workers=4, chunksize=1)

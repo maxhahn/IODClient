@@ -27,6 +27,9 @@ df = pl.read_ndjson(path)
 #df.write_ndjson('./experiments/fed-v-fisher-final/results1.ndjson')
 
 
+print(df.columns)
+#df = df.with_columns(max_split_percentage=pl.col('split_percentages').list.max())
+
 df = df.select('name', 'num_clients', 'num_samples', cs.ends_with('_p_values'))
 
 df = df.with_columns(
@@ -35,7 +38,7 @@ df = df.with_columns(
 )
 
 experiment_types = ['M-O', 'C-B', 'B-O', 'C-O', 'C-M']
-type_idx = 3
+type_idx = -1
 if type_idx >= 0:
     current_experiment_type = experiment_types[type_idx]
     df = df.filter(pl.col('experiment_type') == current_experiment_type)
@@ -50,6 +53,41 @@ print(df.group_by('experiment_type', 'conditioning_type').agg(pl.len()).sort('le
 #df = df.sort('experiment_type', 'conditioning_type')
 df = df.explode('federated_p_values', 'fisher_p_values', 'baseline_p_values')
 
+
+num_samples = 2000
+plot = None
+_df = df.filter(pl.col('num_samples') == num_samples)
+for i in [1,3,5,7]:
+
+    _plot = _df.filter(pl.col('num_clients') == i).hvplot.scatter(
+        x='baseline_p_values',
+        y=['federated_p_values', 'fisher_p_values'],
+        alpha=0.3,
+        ylim=(-0.01,1.01),
+        width=400,
+        height=400,
+        #by='Method',
+        #legend='bottom_right',
+        #backend='matplotlib',
+        #s=20,
+        xlabel=r'Baseline p-value',  # LaTeX-escaped #
+        ylabel=r'Predicted p-value',
+        marker=['v', '^'],
+        #linestyle=['dashed', 'dotted']
+        #title=f'{"Client" if i == 1 else "Clients"}'
+    )
+
+    # Apply different line styles
+    #_plot = _plot.opts(line_dash=['solid', 'dashed'])
+
+    _render =  hv.render(_plot, backend='matplotlib')
+    #_render.savefig(f'images/correlation-c{i}.pgf', format='pgf', bbox_inches='tight', dpi=300)
+    _render.savefig(f'images/scatter-c{i}-samples{num_samples}.svg', format='svg', bbox_inches='tight', dpi=300)
+
+    # if plot is None:
+    #     plot = _plot
+    # else:
+    #     plot = plot + _plot
 
 def get_correlation(df, identifiers, colx, coly):
     _df = df
