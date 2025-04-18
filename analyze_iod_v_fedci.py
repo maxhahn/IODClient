@@ -10,7 +10,8 @@ json_file = "experiments/simulation/iod_comparison_final/*.ndjson"
 #json_file = "experiments/simulation/iod_comparison_single_pag/*.ndjson"
 #json_file = "experiments/simulation/iod_comparison_inbalance/*.ndjson"
 #json_file = "experiments/simulation/iod_comparison_find_correct/*.ndjson"
-json_file = "experiments/simulation/iod_comparison_inbalance2/*.ndjson"
+#json_file = "experiments/simulation/iod_comparison_inbalance2/*.ndjson"
+json_file = "experiments/simulation/algo_comp/*.ndjson"
 
 metric = 'MIN_SHD'
 #metric = 'MIN_FDR'
