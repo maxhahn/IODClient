@@ -141,7 +141,7 @@ def mxm_ci_test(df):
         labels = list(result['labels'])
     return df_pvals, labels
 
-def test_ci(num_samples, test_setup, alpha = 0.05):
+def test_ci(df_msep, num_samples, test_setup, perc_split=0.5, alpha = 0.05):
     all_labels = set(sorted(list(set(test_setup[1][0] + test_setup[1][1]))))
 
     labels1 = set(test_setup[1][0])
@@ -160,22 +160,31 @@ def test_ci(num_samples, test_setup, alpha = 0.05):
 
     # loop here
     cnt = 0
+    cnt_split_attempt = 0
     while True:
 
         df = get_dataframe_from_r(test_setup, num_samples)#, mode='continuos')
 
-        df1 = df[:len(df)//2]
-        df2 = df[len(df)//2:]
+        cutoff = int(perc_split * len(df))
+        df1 = df[:cutoff]
+        df2 = df[cutoff:]
 
-        pl.Config.set_tbl_rows(50)
+        if not(df1.select((cs.by_name(labels1) - cs.float()).n_unique()).equals(df.select((cs.by_name(labels1) - cs.float()).n_unique()))\
+            & df2.select((cs.by_name(labels2) - cs.float()).n_unique()).equals(df.select((cs.by_name(labels2) - cs.float()).n_unique()))):
+                cnt_split_attempt += 1
+                if cnt_split_attempt > 10:
+                    print('Problem creating splits', cnt_split_attempt)
+                continue
+        cnt_split_attempt = 0
+        #pl.Config.set_tbl_rows(50)
 
         result_df_intersect, result_labels_intersect = mxm_ci_test(df.select(label_intersect))
         result_df1, result_labels1 = mxm_ci_test(df1.select(labels1))
         result_df2, result_labels2 = mxm_ci_test(df2.select(labels2))
 
-        result_df_intersect = pl.from_pandas(result_df_intersect).lazy()
-        result_df1 = pl.from_pandas(result_df1).lazy()
-        result_df2 = pl.from_pandas(result_df2).lazy()
+        result_df_intersect = pl.from_pandas(result_df_intersect)#.lazy()
+        result_df1 = pl.from_pandas(result_df1)#.lazy()
+        result_df2 = pl.from_pandas(result_df2)#.lazy()
 
         mapping1 = {str(i):l for i,l in enumerate(result_labels1, start=1)}
         result_df1 = result_df1.with_columns(
@@ -218,24 +227,41 @@ def test_ci(num_samples, test_setup, alpha = 0.05):
         result_df_intersect = result_df_intersect.with_columns(indep=(pl.col('pvalue') > alpha))
         result_df_intersect = result_df_intersect.drop('pvalue')
 
+        local_faithfulness_test_df = result_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
+        is_locally_faithful = local_faithfulness_test_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(local_faithfulness_test_df)
+
         result_df = result_df.join(result_df_intersect, on=['ord', 'X', 'Y', 'S'], how='anti')
-        result_df = pl.concat([result_df, result_df_intersect]).collect()
+        result_df = pl.concat([result_df, result_df_intersect])#.collect()
 
-        if (result_df["indep"].null_count()/len(result_df)) == 0:
-            break
+        result_df = result_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
+        result_df = result_df.sort('ord', 'X', 'Y', 'S')
+
+        is_faithful = result_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(result_df)
+        print(is_faithful, is_locally_faithful, cnt)
+
         if cnt > 20:
-            print(f'Stopping with {100-(result_df["indep"].null_count()/len(result_df))*100:.2f}% data filled')
-            #print(f'Stopping with {result_df["indep"].null_count()/len(result_df)}% data filled')
-        cnt += 1
+            return df1.select(labels1), df2.select(labels2), result_df, is_faithful, is_locally_faithful
 
-    return df1.select(labels1), df2.select(labels2), result_df
+        if is_faithful and not is_locally_faithful:
+            return df1.select(labels1), df2.select(labels2), result_df, is_faithful, is_locally_faithful
+        elif is_faithful:
+            if cnt > 10:
+                return df1.select(labels1), df2.select(labels2), result_df, is_faithful, is_locally_faithful
+            cnt += 1
+            continue
+        else:
+            cnt += 1
+            continue
+
+    return df1.select(labels1), df2.select(labels2), result_df, is_faithful, is_locally_faithful
 
 
 test_setups = [(pag, subset, i) for i,(pag,subset) in enumerate(zip(truePAGs, subsetsList))]
 #test_setups = test_setups[:1]
 
 #test_setups = test_setups[:1]
-NUM_TESTS = 10
+NUM_TESTS = 4
+# ls -la experiments/datasets/*/*-100000-faith.parquet | wc -l
 ALPHA = 0.05
 
 # TODO: run the tests done so far for fedci with colliders with order IOD
@@ -250,12 +276,11 @@ now = int(datetime.datetime.utcnow().timestamp()*1e3)
 data_file_pattern = str(now) + '-' + data_file_pattern
 
 def generate_dataset(setup):
-    idx, data_dir, data_file_pattern, test_setup, num_samples = setup
+    idx, data_dir, data_file_pattern, test_setup, num_samples, perc_split = setup
     #data_file = data_file_pattern.format(idx, num_samples)
     #data = get_dataframe_from_r(test_setup, num_samples)
 
     #data1, data2, df_faithful = test_ci(data, test_setup)
-    data1, data2, df_faithful = test_ci(num_samples, test_setup)
 
     df_msep = pl.read_parquet('./experiments/pag_msep/pag-{}.parquet'.format(test_setup[2]))
     df_msep = df_msep.with_columns(pl.col('S').list.join(','))
@@ -267,30 +292,51 @@ def generate_dataset(setup):
                 pl.col('S').str.count_matches(',') + 1
             )
     )
+
+    indeps = df_msep.filter(pl.col('MSep')).select(x=pl.col('X')+pl.col('Y')+pl.col('S').str.replace_all(',', ''))['x'].to_list()
+    indeps = [set(list(indep)) for indep in indeps]
+    overlap_vars = set(test_setup[1][0]) & set(test_setup[1][1])
+    if not any([indep.issubset(overlap_vars) for indep in indeps]):
+        #print('No dependence in overlap')
+        return
+    #print(f'Independence exists in overlap! PAG: {test_setup[2]}')
+
+    #client_a_exclusive = set(test_setup[1][0]) - set(test_setup[1][1])
+    #if any([client_a_exclusive.issubset(indep) for indep in indeps]):
+    #    #print('No dependence in overlap')
+    #    return
+
+    data1, data2, df_faithful, is_faithful, is_locally_faithful = test_ci(df_msep, num_samples, test_setup, perc_split)
+
     #print(df_msep)
 
     #print(len(df_msep))
     # do full outer join here if you want to check all possible combinations
-    df_faithful = df_faithful.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
-    df_faithful = df_faithful.sort('ord', 'X', 'Y', 'S')
+
     #print(data1.columns, data2.columns)
     #print(df_faithful)
     #print(data)
     #asd
 
-    is_faithful = df_faithful.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(df_faithful)
+    #is_faithful = df_faithful.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(df_faithful)
+    faith_id = ''
+    if is_faithful:
+        faith_id += 'g'
+    if is_locally_faithful:
+        faith_id += 'l'
+    if not is_faithful and not is_locally_faithful:
+        faith_id = 'n'
 
     now = int(datetime.datetime.utcnow().timestamp()*1e3)
 
     if is_faithful:
-        df_faithful.write_parquet('./experiments/datasets/faithful/{}-{}-{}-faith.parquet'.format(now, test_setup[2], num_samples))
-        data1.write_parquet('./experiments/datasets/faithful/{}-{}-{}-d1.parquet'.format(now, test_setup[2], num_samples))
-        data2.write_parquet('./experiments/datasets/faithful/{}-{}-{}-d2.parquet'.format(now, test_setup[2], num_samples))
+        df_faithful.write_parquet('./experiments/datasets/f2/{}-{}-{}-{}-{}-faith.parquet'.format(now, test_setup[2], num_samples, perc_split, faith_id))
+        data1.write_parquet('./experiments/datasets/f2/{}-{}-{}-{}-{}-d1.parquet'.format(now, test_setup[2], num_samples, perc_split, faith_id))
+        data2.write_parquet('./experiments/datasets/f2/{}-{}-{}-{}-{}-d2.parquet'.format(now, test_setup[2], num_samples, perc_split, faith_id))
     else:
-        df_faithful.write_parquet('./experiments/datasets/unfaithful/{}-{}-{}-faith.parquet'.format(now, test_setup[2], num_samples))
-        data1.write_parquet('./experiments/datasets/unfaithful/{}-{}-{}-d1.parquet'.format(now, test_setup[2], num_samples))
-        data2.write_parquet('./experiments/datasets/unfaithful/{}-{}-{}-d2.parquet'.format(now, test_setup[2], num_samples))
-
+        df_faithful.write_parquet('./experiments/datasets/uf2/{}-{}-{}-{}-{}-faith.parquet'.format(now, test_setup[2], num_samples, perc_split, faith_id))
+        data1.write_parquet('./experiments/datasets/uf2/{}-{}-{}-{}-{}-d1.parquet'.format(now, test_setup[2], num_samples, perc_split, faith_id))
+        data2.write_parquet('./experiments/datasets/uf2/{}-{}-{}-{}-{}-d2.parquet'.format(now, test_setup[2], num_samples, perc_split, faith_id))
 
 
     # GET M SEPARABILITY
@@ -299,9 +345,12 @@ def generate_dataset(setup):
 
 #pl.Config.set_tbl_rows(20)
 
-num_samples_options = [100_000] #, 50_000, 100_000]
+num_samples_options = [50_000] #, 50_000, 100_000]
+split_options = [0.1, 0.5]#[0.1,0.5]
 
-configurations = list(itertools.product(test_setups, num_samples_options))
+# 1745260633172-2 PAG 2 LOOKING FINE!
+
+configurations = list(itertools.product(test_setups, num_samples_options, split_options))
 configurations = [(data_dir, data_file_pattern) + c for c in configurations]
 configurations = [(i,) + c for i in range(NUM_TESTS) for c in configurations]
 

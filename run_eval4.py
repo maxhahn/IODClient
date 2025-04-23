@@ -53,23 +53,28 @@ print(df.group_by('experiment_type', 'conditioning_type').agg(pl.len()).sort('le
 #df = df.sort('experiment_type', 'conditioning_type')
 df = df.explode('federated_p_values', 'fisher_p_values', 'baseline_p_values')
 
-
 num_samples = 2000
 plot = None
 _df = df.filter(pl.col('num_samples') == num_samples)
 for i in [1,3,5,7]:
 
-    _plot = _df.filter(pl.col('num_clients') == i).hvplot.scatter(
+    __df = _df.filter(pl.col('num_clients') == i)
+    #print(i, len(_df), len(__df))
+    __df = __df.sample(min(1_000, len(__df)))
+
+
+    _plot = __df.hvplot.scatter(
         x='baseline_p_values',
         y=['federated_p_values', 'fisher_p_values'],
-        alpha=0.3,
+        alpha=0.6,
         ylim=(-0.01,1.01),
+        xlim=(-0.01,1.01),
         width=400,
         height=400,
         #by='Method',
-        #legend='bottom_right',
+        legend='bottom_right',
         #backend='matplotlib',
-        #s=20,
+        s=5000,
         xlabel=r'Baseline p-value',  # LaTeX-escaped #
         ylabel=r'Predicted p-value',
         marker=['v', '^'],
@@ -77,17 +82,31 @@ for i in [1,3,5,7]:
         #title=f'{"Client" if i == 1 else "Clients"}'
     )
 
-    # Apply different line styles
-    #_plot = _plot.opts(line_dash=['solid', 'dashed'])
+    _render =  hv.render(_plot, backend='matplotlib')
+    _render.savefig(f'images/pval_comp/scatter-c{i}-samples{num_samples}.svg', format='svg', bbox_inches='tight', dpi=300)
+
+    _plot = __df.hvplot.scatter(
+        x='baseline_p_values',
+        y=['federated_p_values', 'fisher_p_values'],
+        alpha=0.6,
+        ylim=(-0.01,0.1),
+        xlim=(-0.01,0.1),
+        width=400,
+        height=400,
+        #by='Method',
+        legend='bottom_right',
+        #backend='matplotlib',
+        s=5000,
+        xlabel=r'Baseline p-value',  # LaTeX-escaped #
+        ylabel=r'Predicted p-value',
+        marker=['v', '^'],
+        #linestyle=['dashed', 'dotted']
+        #title=f'{"Client" if i == 1 else "Clients"}'
+    )
 
     _render =  hv.render(_plot, backend='matplotlib')
-    #_render.savefig(f'images/correlation-c{i}.pgf', format='pgf', bbox_inches='tight', dpi=300)
-    _render.savefig(f'images/scatter-c{i}-samples{num_samples}.svg', format='svg', bbox_inches='tight', dpi=300)
+    _render.savefig(f'images/pval_comp/scatter-c{i}-samples{num_samples}-small.svg', format='svg', bbox_inches='tight', dpi=300)
 
-    # if plot is None:
-    #     plot = _plot
-    # else:
-    #     plot = plot + _plot
 
 def get_correlation(df, identifiers, colx, coly):
     _df = df
@@ -141,6 +160,7 @@ identifiers = [
     #'experiment_type',
     #'conditioning_type'
 ]
+
 df_fed = get_correlation(df, identifiers, 'federated_p_values', 'baseline_p_values').rename({'p_value_correlation': 'Federated'})
 df_fisher = get_correlation(df, identifiers, 'fisher_p_values', 'baseline_p_values').rename({'p_value_correlation': 'Meta-Analysis'})
 
@@ -213,7 +233,7 @@ for i in [1,3,5,7]:
 
     _render =  hv.render(_plot, backend='matplotlib')
     #_render.savefig(f'images/correlation-c{i}.pgf', format='pgf', bbox_inches='tight', dpi=300)
-    _render.savefig(f'images/correlation-c{i}{current_experiment_type}.svg', format='svg', bbox_inches='tight', dpi=300)
+    _render.savefig(f'images/pval_comp/correlation-c{i}{current_experiment_type}.svg', format='svg', bbox_inches='tight', dpi=300)
 
     if plot is None:
         plot = _plot
@@ -289,4 +309,4 @@ for i in [1,3,5,7]:
     _render =  hv.render(_plot, backend='matplotlib')
     #_render.savefig(f'images/accuracy-c{i}.pgf', format='pgf', bbox_inches='tight', dpi=300)
     #_render.savefig(f'images/accuracy-c{i}.png', format='png', bbox_inches='tight', dpi=300)
-    _render.savefig(f'images/accuracy-c{i}{current_experiment_type}.svg', format='svg', bbox_inches='tight', dpi=300)
+    _render.savefig(f'images/pval_comp/accuracy-c{i}{current_experiment_type}.svg', format='svg', bbox_inches='tight', dpi=300)

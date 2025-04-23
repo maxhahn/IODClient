@@ -23,8 +23,8 @@ import fedci
 
 # supress R log
 import rpy2.rinterface_lib.callbacks as cb
-#cb.consolewrite_print = lambda x: None
-#cb.consolewrite_warnerror = lambda x: None
+cb.consolewrite_print = lambda x: None
+cb.consolewrite_warnerror = lambda x: None
 
 #ro.r['source']('./load_pags.r')
 #load_pags = ro.globalenv['load_pags']
@@ -160,113 +160,6 @@ def pag_to_node_collection(pag):
     assert len(ncs) > 0, 'At least one result is required'
     nc = random.choice(ncs)
     return nc.reset()
-
-
-def get_dataframe_from_r(test_setup, num_samples):
-    raw_true_pag = test_setup[0]
-    labels = sorted(list(set(test_setup[1][0] + test_setup[1][1])))
-    potential_var_types = {'continuous': [1], 'binary': [2], 'ordinal': [3,4], 'nominal': [3,4]}
-    var_types = {}
-    var_levels = []
-    for label in labels:
-        var_type = random.choice(list(potential_var_types.keys()))
-        var_types[label] = var_type
-        var_levels += [random.choice(potential_var_types[var_type])]
-    succeeded = False
-    cnt = 0
-    #print(var_types)
-    while not succeeded:
-        cnt += 1
-        # get data from R function
-        try:
-            dat = get_data_f(raw_true_pag, num_samples, var_levels, 'continuous' if cnt > 2 else 'mixed')
-        except ro.rinterface_lib.embedded.RRuntimeError as e:
-            continue
-
-        # convert R result to pandas
-        with (ro.default_converter + pandas2ri.converter).context():
-            df = ro.conversion.get_conversion().rpy2py(dat[0])
-
-        # attempt to get correct dataframe
-        try:
-            df = pl.from_pandas(df)
-        except:
-            continue
-
-        succeeded = True
-    for var_name, var_type in var_types.items():
-        if cnt > 2 or var_type == 'continuous':
-            df = df.with_columns(pl.col(var_name).cast(pl.Float64))
-        elif var_type == 'binary':
-            df = df.with_columns(pl.col(var_name) == 'A')
-        elif var_type == 'ordinal':
-            repl_dict = {'A': 1, 'B': 2, 'C': 3, 'D': 4}
-            df = df.with_columns(pl.col(var_name).cast(pl.Utf8).replace(repl_dict).cast(pl.Int32))
-        elif var_type == 'nominal':
-            df = df.with_columns(pl.col(var_name).cast(pl.Utf8))
-    return df
-
-def get_data(test_setup, num_samples, num_clients):
-    def split_dataframe(df, n):
-        if n <= 0:
-            raise ValueError("The number of splits 'n' must be greater than 0.")
-
-        min_perc = 0.03
-        percentiles = np.random.uniform(0,1,n)
-        percentiles = (percentiles+min_perc)
-        percentiles = percentiles/np.sum(percentiles)
-        split_percentiles = percentiles.tolist()
-        percentiles = np.cumsum(percentiles)
-        percentiles = [0] + percentiles.tolist()[:-1] + [1]
-
-        splits = []
-        for i in range(n):
-            start = int(percentiles[i]*len(df))
-            end = int(percentiles[i+1]*len(df))
-            splits.append(df[start:end])
-
-        return splits, split_percentiles
-
-    #pag = floatmatrix_to_2dlist(test_setup[0])
-    #nc = pag_to_node_collection(pag)
-
-    pag = test_setup[0]
-
-    is_valid = False
-    while not is_valid:
-        is_valid = True
-        #data = nc.reset().get(num_samples)
-        data = get_dataframe_from_r(test_setup, num_samples)
-
-        cols = data.columns
-        cols_c1 = test_setup[1][0]
-        cols_c2 = test_setup[1][1]
-        cols_cx = [test_setup[1][i%2] for i in range(num_clients-2)]
-        #cols_cx = [sorted(cols, key=lambda k: random.random())[:-1] for _ in range(num_clients-2)]
-
-        split_dfs, split_percs = split_dataframe(data, num_clients)
-        client_data = [df.select(c) for df, c in zip(split_dfs, [cols_c1, cols_c2] + cols_cx)]
-
-
-        # With this validity check, it is ensured that every client has the same number of n_uniques for all non-continuos cols
-        unique_values_in_data = data.select((cs.all() - cs.float()).n_unique())
-        if len(unique_values_in_data) == 0:
-            break
-        unique_values_in_data = unique_values_in_data.row(0, named=True)
-
-        for d in client_data:
-            if not is_valid:
-                break
-            unique_values_in_client = d.select((cs.all() - cs.float()).n_unique())
-            if len(unique_values_in_client) == 0:
-                continue
-            for k,v in unique_values_in_client.row(0, named=True).items():
-                if v == 1 or unique_values_in_data[k] != v:
-                    is_valid = False
-                    break
-
-    return (pag, sorted(data.columns)), (client_data, split_percs)
-
 
 def setup_server(client_data):
     # Create Clients
@@ -411,7 +304,7 @@ def run_riod(true_pag, true_labels, df, labels, client_labels, alpha, procedure)
 
         #print(true_labels, labels, g_pag_labels)
         found_correct_pag = bool(result['found_correct_pag'][0])
-        print(found_correct_pag)
+        #print(found_correct_pag)
         g_pag_shd = [x[1][0].item() for x in result['G_PAG_SHD'].items()]
         g_pag_for = [x[1][0].item() for x in result['G_PAG_FOR'].items()]
         g_pag_fdr = [x[1][0].item() for x in result['G_PAG_FDR'].items()]
@@ -553,16 +446,21 @@ ALPHA = 0.05
 # 500,1000,5000,10000 with 2,4 clients 10 times
 
 #test_setups = test_setups[5:10]
-data_dir = './experiments/simulation/algo_comp'
+data_dir = './experiments/simulation/iod_comp2'
 data_file_pattern = '{}-{}.ndjson'
 
-faithful_path = './experiments/datasets/faithful/'
-unfaithful_path = './experiments/datasets/unfaithful/'
+faithful_path = './experiments/datasets/f2/'
+unfaithful_path = './experiments/datasets/uf2/'
 
 
 
 def run_comparison(setup):
     data_id, is_faithful = setup
+
+    target_file = 'experiments/simulation/comp2/' + data_id + '-result-{}faithful.parquet'.format("" if is_faithful else "un")
+
+    if os.path.exists(target_file):
+        return
 
     if is_faithful:
         df1 = pl.read_parquet(faithful_path + data_id + '-d1.parquet')
@@ -576,6 +474,7 @@ def run_comparison(setup):
 
     pag_id = int(data_id.split('-')[1])
     num_samples = int(data_id.split('-')[2])
+    split_perc = float(data_id.split('-')[3])
     true_pag = pag_lookup[pag_id]
 
     data_file = data_file_pattern.format(data_id, 'result')
@@ -675,7 +574,8 @@ def run_comparison(setup):
         indep_fedci=pl.col('pvalue_fedci') > ALPHA
     ).drop('pvalue_fisher', 'pvalue_fedci')
 
-    df_faith.write_parquet('experiments/simulation/algo_comp_faith/' + data_id + '-result-{}faithful.parquet'.format("" if is_faithful else "un"))
+
+    df_faith.write_parquet(target_file)
 
     metrics_fisher_ot = run_pval_agg_iod(
         true_pag,
@@ -701,17 +601,17 @@ def run_comparison(setup):
 
     #print(found_correct_pag_fedci, found_correct_pag_pvalagg)
 
-    log_results(data_dir, data_file, metrics_fedci, metrics_fedci_ot, metrics_fisher, metrics_fisher_ot, ALPHA, num_samples, 2, [0.5,0.5], pag_id, is_faithful)
+    log_results(data_dir, data_file, metrics_fedci, metrics_fedci_ot, metrics_fisher, metrics_fisher_ot, ALPHA, num_samples, 2, [split_perc,1-split_perc], pag_id, is_faithful)
 
 
 import os
 
 pag_lookup = {i: pag for i, pag in enumerate(truePAGs)}
 
-faithful_data = set([f.rpartition('-')[0] for f in os.listdir('experiments/datasets/faithful')])
-unfaithful_data = set([f.rpartition('-')[0] for f in os.listdir('experiments/datasets/unfaithful')])
+faithful_data = set([f.rpartition('-')[0] for f in os.listdir('experiments/datasets/f2')])
+unfaithful_data = set([f.rpartition('-')[0] for f in os.listdir('experiments/datasets/uf2')])
 
-configurations = [(id, True) for id in faithful_data]   # + [(id, False) for id in unfaithful_data]
+configurations = [(id, True) for id in faithful_data] + [(id, False) for id in unfaithful_data]
 
 from tqdm.contrib.concurrent import process_map
 

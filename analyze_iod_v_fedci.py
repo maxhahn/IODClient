@@ -11,7 +11,7 @@ json_file = "experiments/simulation/iod_comparison_final/*.ndjson"
 #json_file = "experiments/simulation/iod_comparison_inbalance/*.ndjson"
 #json_file = "experiments/simulation/iod_comparison_find_correct/*.ndjson"
 #json_file = "experiments/simulation/iod_comparison_inbalance2/*.ndjson"
-json_file = "experiments/simulation/algo_comp/*.ndjson"
+json_file = "experiments/simulation/iod_comp2/*-g-*.ndjson"
 
 metric = 'MIN_SHD'
 #metric = 'MIN_FDR'
