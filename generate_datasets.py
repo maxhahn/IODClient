@@ -141,7 +141,7 @@ def mxm_ci_test(df):
         labels = list(result['labels'])
     return df_pvals, labels
 
-def test_ci(df_msep, num_samples, test_setup, perc_split=0.5, alpha = 0.05):
+def test_ci(df_msep, num_samples, test_setup, perc_split=[0.5], alpha = 0.05):
     all_labels = set(sorted(list(set(test_setup[1][0] + test_setup[1][1]))))
 
     labels1 = set(test_setup[1][0])
@@ -165,95 +165,148 @@ def test_ci(df_msep, num_samples, test_setup, perc_split=0.5, alpha = 0.05):
 
         df = get_dataframe_from_r(test_setup, num_samples)#, mode='continuos')
 
-        cutoff = int(perc_split * len(df))
-        df1 = df[:cutoff]
-        df2 = df[cutoff:]
 
-        if not(df1.select((cs.by_name(labels1) - cs.float()).n_unique()).equals(df.select((cs.by_name(labels1) - cs.float()).n_unique()))\
-            & df2.select((cs.by_name(labels2) - cs.float()).n_unique()).equals(df.select((cs.by_name(labels2) - cs.float()).n_unique()))):
-                cnt_split_attempt += 1
-                if cnt_split_attempt > 10:
-                    print('Problem creating splits', cnt_split_attempt)
+        dfs1 = []
+        dfs2 = []
+
+        split_acc = 0
+        for i, split_perc in enumerate(perc_split):
+            cutoff_from = int(split_acc * len(df))
+            cutoff_to = int((split_acc+split_perc) * len(df))
+            split_acc += split_perc
+            _df = df[cutoff_from:cutoff_to]
+            if i % 2 == 0:
+                dfs1.append(_df.select(labels1))
+            else:
+                dfs2.append(_df.select(labels2))
+
+        #cutoff = int(perc_split * len(df))
+        #df1 = df[:cutoff]
+        #df2 = df[cutoff:]
+
+        retry = False
+        for df1 in dfs1:
+            if not df1.select((cs.by_name(labels1) - cs.float()).n_unique()).equals(df.select((cs.by_name(labels1) - cs.float()).n_unique())):
+                retry = True
+        for df2 in dfs2:
+            if not df2.select((cs.by_name(labels2) - cs.float()).n_unique()).equals(df.select((cs.by_name(labels2) - cs.float()).n_unique())):
+                retry = True
+        if retry:
+            cnt_split_attempt += 1
+            if cnt_split_attempt <= 10:
                 continue
+
+        # if not(df1.select((cs.by_name(labels1) - cs.float()).n_unique()).equals(df.select((cs.by_name(labels1) - cs.float()).n_unique()))\
+        #     & df2.select((cs.by_name(labels2) - cs.float()).n_unique()).equals(df.select((cs.by_name(labels2) - cs.float()).n_unique()))):
+        #         cnt_split_attempt += 1
+        #         if cnt_split_attempt > 10:
+        #             print('Problem creating splits', cnt_split_attempt)
+        #         continue
         cnt_split_attempt = 0
         #pl.Config.set_tbl_rows(50)
 
-        result_df_intersect, result_labels_intersect = mxm_ci_test(df.select(label_intersect))
-        result_df1, result_labels1 = mxm_ci_test(df1.select(labels1))
-        result_df2, result_labels2 = mxm_ci_test(df2.select(labels2))
+        result_dfs1 = []
+        result_labels1 = []
+        result_dfs2 = []
+        result_labels2 = []
 
-        result_df_intersect = pl.from_pandas(result_df_intersect)#.lazy()
-        result_df1 = pl.from_pandas(result_df1)#.lazy()
-        result_df2 = pl.from_pandas(result_df2)#.lazy()
+        for df1 in dfs1:
+            result_df1, result_labels1 = mxm_ci_test(df1)
+            result_df1 = pl.from_pandas(result_df1)
+            result_df1 = result_df1.with_columns(indep=pl.col('pvalue')>ALPHA)
+            result_dfs1.append(result_df1)
+            result_labels1.append(result_labels1)
+        for df2 in dfs2:
+            result_df2, result_labels2 = mxm_ci_test(df2)
+            result_df2 = pl.from_pandas(result_df2)
+            result_df2 = result_df2.with_columns(indep=pl.col('pvalue')>ALPHA)
+            result_dfs2.append(result_df2)
+            result_labels2.append(result_labels2)
 
-        mapping1 = {str(i):l for i,l in enumerate(result_labels1, start=1)}
-        result_df1 = result_df1.with_columns(
-            pl.col('X').cast(pl.Utf8).replace(mapping1),
-            pl.col('Y').cast(pl.Utf8).replace(mapping1),
-            pl.col('S').str.split(',').list.eval(pl.element().replace(mapping1)).list.sort().list.join(','),
+        subset1_df = pl.concat(dfs1)
+        result_subset1_df, result_subset1_labels = mxm_ci_test(subset1_df)
+        result_subset1_df = pl.from_pandas(result_subset1_df)
+        result_subset1_df = result_subset1_df.with_columns(indep=pl.col('pvalue')>ALPHA)
+
+        subset2_df = pl.concat(dfs2)
+        result_subset2_df, result_subset2_labels = mxm_ci_test(subset2_df)
+        result_subset2_df = pl.from_pandas(result_subset2_df)
+        result_subset2_df = result_subset2_df.with_columns(indep=pl.col('pvalue')>ALPHA)
+
+        result_dfs1_new = []
+        for result_df1, result_labels1 in zip(result_dfs1, result_labels1):
+            mapping = {str(i):l for i,l in enumerate(result_labels1, start=1)}
+            result_df1 = result_df1.with_columns(
+                pl.col('X').cast(pl.Utf8).replace(mapping),
+                pl.col('Y').cast(pl.Utf8).replace(mapping),
+                pl.col('S').str.split(',').list.eval(pl.element().replace(mapping)).list.sort().list.join(','),
+            )
+            result_dfs1_new.append(result_df1)
+        result_dfs1 = result_dfs1_new
+
+        result_dfs2_new = []
+        for result_df2, result_labels2 in zip(result_dfs2, result_labels2):
+            mapping = {str(i):l for i,l in enumerate(result_labels2, start=1)}
+            result_df2 = result_df2.with_columns(
+                pl.col('X').cast(pl.Utf8).replace(mapping),
+                pl.col('Y').cast(pl.Utf8).replace(mapping),
+                pl.col('S').str.split(',').list.eval(pl.element().replace(mapping)).list.sort().list.join(','),
+            )
+        result_dfs2 = result_dfs2_new
+
+
+        mapping = {str(i):l for i,l in enumerate(result_subset1_labels, start=1)}
+        result_subset1_df = result_subset1_df.with_columns(
+            pl.col('X').cast(pl.Utf8).replace(mapping),
+            pl.col('Y').cast(pl.Utf8).replace(mapping),
+            pl.col('S').str.split(',').list.eval(pl.element().replace(mapping)).list.sort().list.join(','),
         )
 
-        mapping2 = {str(i):l for i,l in enumerate(result_labels2, start=1)}
-        result_df2 = result_df2.with_columns(
-            pl.col('X').cast(pl.Utf8).replace(mapping2),
-            pl.col('Y').cast(pl.Utf8).replace(mapping2),
-            pl.col('S').str.split(',').list.eval(pl.element().replace(mapping2)).list.sort().list.join(','),
+        mapping = {str(i):l for i,l in enumerate(result_subset2_labels, start=1)}
+        result_subset2_df = result_subset2_df.with_columns(
+            pl.col('X').cast(pl.Utf8).replace(mapping),
+            pl.col('Y').cast(pl.Utf8).replace(mapping),
+            pl.col('S').str.split(',').list.eval(pl.element().replace(mapping)).list.sort().list.join(','),
         )
 
-        mapping_intersect = {str(i):l for i,l in enumerate(result_labels_intersect, start=1)}
-        result_df_intersect = result_df_intersect.with_columns(
-            pl.col('X').cast(pl.Utf8).replace(mapping_intersect),
-            pl.col('Y').cast(pl.Utf8).replace(mapping_intersect),
-            pl.col('S').str.split(',').list.eval(pl.element().replace(mapping_intersect)).list.sort().list.join(','),
-        )
 
         #print(result_df1)
         #print(result_df1.schema)
         #print(result_df2)
 
-        result_df = result_df1.join(result_df2, on=['ord', 'X', 'Y', 'S'], how='full', coalesce=True)
-        #print(labels1, labels2)
-        #print(result_df.collect())
+        faithful1 = []
+        faithful2 = []
 
+        is_any_client_faithful = False
+        for df1 in result_dfs1:
+            faithful_df = df1.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
+            is_faithful = faithful_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(faithful_df)
+            is_any_client_faithful = is_any_client_faithful | is_faithful
+        for df2 in result_dfs2:
+            faithful_df = df2.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
+            is_faithful = faithful_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(faithful_df)
 
-        result_df = result_df.with_columns(indep=pl.when(
-            ((pl.col('pvalue') > alpha) | pl.col('pvalue').is_null()) & ((pl.col('pvalue_right') > alpha) | pl.col('pvalue_right').is_null())
-        ).then(pl.lit(True)).when(
-            ((pl.col('pvalue') < alpha) | pl.col('pvalue').is_null()) & ((pl.col('pvalue_right') < alpha) | pl.col('pvalue_right').is_null())
-        ).then(pl.lit(False)).otherwise(pl.lit(None)))
-
-        result_df = result_df.drop('pvalue', 'pvalue_right')
-
-        result_df_intersect = result_df_intersect.with_columns(indep=(pl.col('pvalue') > alpha))
-        result_df_intersect = result_df_intersect.drop('pvalue')
-
-        local_faithfulness_test_df = result_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
-        is_locally_faithful = local_faithfulness_test_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(local_faithfulness_test_df)
-
-        result_df = result_df.join(result_df_intersect, on=['ord', 'X', 'Y', 'S'], how='anti')
-        result_df = pl.concat([result_df, result_df_intersect])#.collect()
-
-        result_df = result_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
-        result_df = result_df.sort('ord', 'X', 'Y', 'S')
-
-        is_faithful = result_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(result_df)
-        print(is_faithful, is_locally_faithful, cnt)
-
-        if cnt > 20:
-            return df1.select(labels1), df2.select(labels2), result_df, is_faithful, is_locally_faithful
-
-        if is_faithful and not is_locally_faithful:
-            return df1.select(labels1), df2.select(labels2), result_df, is_faithful, is_locally_faithful
-        elif is_faithful:
-            if cnt > 10:
-                return df1.select(labels1), df2.select(labels2), result_df, is_faithful, is_locally_faithful
-            cnt += 1
-            continue
-        else:
+        if is_any_client_faithful and cnt < 20:
             cnt += 1
             continue
 
-    return df1.select(labels1), df2.select(labels2), result_df, is_faithful, is_locally_faithful
+        faithful_df = result_subset1_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
+        is_faithful1 = faithful_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(faithful_df)
+
+        if not is_faithful1 and cnt < 20:
+            cnt += 1
+            continue
+
+        faithful_df = result_subset2_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
+        is_faithful2 = faithful_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(faithful_df)
+
+        if not is_faithful2 and cnt < 20:
+            cnt += 1
+            continue
+
+        print(is_any_client_faithful, is_faithful1, is_faithful2, cnt)
+
+    return result_dfs1, result_dfs2, is_any_client_faithful, is_faithful1, is_faithful2
 
 
 test_setups = [(pag, subset, i) for i,(pag,subset) in enumerate(zip(truePAGs, subsetsList))]
@@ -276,7 +329,7 @@ now = int(datetime.datetime.utcnow().timestamp()*1e3)
 data_file_pattern = str(now) + '-' + data_file_pattern
 
 def generate_dataset(setup):
-    idx, data_dir, data_file_pattern, test_setup, num_samples, perc_split = setup
+    idx, data_dir, data_file_pattern, test_setup, num_clients, num_samples, perc_split = setup
     #data_file = data_file_pattern.format(idx, num_samples)
     #data = get_dataframe_from_r(test_setup, num_samples)
 
@@ -306,7 +359,7 @@ def generate_dataset(setup):
     #    #print('No dependence in overlap')
     #    return
 
-    data1, data2, df_faithful, is_faithful, is_locally_faithful = test_ci(df_msep, num_samples, test_setup, perc_split)
+    data1, data2, df_faithful, is_faithful, is_locally_faithful = test_ci(df_msep, num_clients, num_samples, test_setup, perc_split)
 
     #print(df_msep)
 
@@ -345,12 +398,13 @@ def generate_dataset(setup):
 
 #pl.Config.set_tbl_rows(20)
 
+num_client_options = [4]
 num_samples_options = [50_000] #, 50_000, 100_000]
-split_options = [0.1, 0.5]#[0.1,0.5]
+split_options = [[0.45, 0.45, 0.05, 0.05]]#[0.1,0.5]
 
 # 1745260633172-2 PAG 2 LOOKING FINE!
 
-configurations = list(itertools.product(test_setups, num_samples_options, split_options))
+configurations = list(itertools.product(test_setups, num_client_options, num_samples_options, split_options))
 configurations = [(data_dir, data_file_pattern) + c for c in configurations]
 configurations = [(i,) + c for i in range(NUM_TESTS) for c in configurations]
 
