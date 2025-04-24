@@ -39,8 +39,8 @@ df = pl.concat(dfs)
 #df = pl.read_parquet(dir)
 
 df = df.with_columns(
-    correct_fisher=pl.col('indep')==pl.col('indep_fisher'),
-    correct_fedci=pl.col('indep')==pl.col('indep_fedci')
+    correct_fisher=pl.col('MSep')==pl.col('indep_fisher'),
+    correct_fedci=pl.col('MSep')==pl.col('indep_fedci')
 )
 
 print(df.select(cs.starts_with('correct_')).mean())

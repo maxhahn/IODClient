@@ -413,8 +413,7 @@ def log_results(
     num_samples,
     num_clients,
     data_percs,
-    pag_id,
-    is_faithful
+    pag_id
 ):
     result = {
         "alpha": alpha,
@@ -426,7 +425,6 @@ def log_results(
         "metrics_fedci_ot": metrics_fedci_ot,
         "metrics_fisher": metrics_fisher,
         "metrics_fisher_ot": metrics_fisher_ot,
-        "faithful": is_faithful
     }
 
     with open(Path(target_dir) / target_file, "a") as f:
@@ -455,34 +453,38 @@ unfaithful_path = './experiments/datasets/uf2/'
 
 
 def run_comparison(setup):
-    data_id, is_faithful = setup
+    data_id, (subset1_files, subset2_files) = setup
 
-    target_file = 'experiments/simulation/comp2/' + data_id + '-result-{}faithful.parquet'.format("" if is_faithful else "un")
+    target_file = 'experiments/simulation/results3/' + data_id + '-result.parquet'
 
     if os.path.exists(target_file):
         return
 
-    if is_faithful:
-        df1 = pl.read_parquet(faithful_path + data_id + '-d1.parquet')
-        df2 = pl.read_parquet(faithful_path + data_id + '-d2.parquet')
-        df_faith = pl.read_parquet(faithful_path + data_id + '-faith.parquet')
-    else:
-        df1 = pl.read_parquet(unfaithful_path + data_id + '-d1.parquet')
-        df2 = pl.read_parquet(unfaithful_path + data_id + '-d2.parquet')
-        df_faith = pl.read_parquet(unfaithful_path + data_id + '-faith.parquet')
+    dfs1 = []
+    dfs2 = []
 
+    for subset1_file in subset1_files:
+        dfs1.append(pl.read_parquet(subset1_file))
+    for subset2_file in subset2_files:
+        dfs2.append(pl.read_parquet(subset2_file))
 
     pag_id = int(data_id.split('-')[1])
     num_samples = int(data_id.split('-')[2])
     split_perc = float(data_id.split('-')[3])
     true_pag = pag_lookup[pag_id]
 
+    df_faith = pl.read_parquet(f'experiments/pag_msep/pag-{pag_id}.parquet')
+    df_faith = df_faith.with_columns(
+        ord=pl.col('S').list.len(),
+        S=pl.col('S').list.sort().list.join(',')
+    )
+
     data_file = data_file_pattern.format(data_id, 'result')
 
     #df1 = df1.sample(1_000)
     #df2 = df2.sample(1_000)
 
-    client_data = [df1, df2]
+    client_data = [*dfs1, *dfs2]
 
     server = setup_server(client_data)
 
@@ -550,19 +552,19 @@ def run_comparison(setup):
         )
         client_dfs.append(ci_df)
 
-    c1_df = client_dfs[0]
-    c2_df = client_dfs[1]
+    fisher_df = pl.concat(client_dfs)
+    fisher_df = fisher_df.group_by(['ord', 'X', 'Y', 'S']).agg(pl.col('pvalue'))
 
-    c_df = c1_df.join(c2_df, on=['ord', 'X', 'Y', 'S'], how='full', coalesce=True)
-
-    c_df = c_df.with_columns(pl.col('pvalue', 'pvalue_right').fill_null(pl.lit(1.0)))
-    c_df = c_df.with_columns(
-        pvalue_fisher=(-2*(pl.col('pvalue').log() + pl.col('pvalue_right').log())).map_elements(lambda x: scipy.stats.chi2.sf(x, 4), return_dtype=pl.Float64)
+    fisher_df = fisher_df.with_columns(
+        DOFs=pl.col('pvalue').list.len(),
+        T=-2*(pl.col('pvalue').list.eval(pl.element().log()).list.sum())
     )
 
-    c_df = c_df.drop('pvalue', 'pvalue_right')
+    fisher_df = fisher_df.with_columns(
+        pvalue_fisher=pl.struct(['DOFs', 'T']).map_elements(lambda row: scipy.stats.chi2.sf(row['T'], row['DOFs']), return_dtype=pl.Float64)
+    ).drop('DOFs', 'T', 'pvalue')
 
-    df_faith = df_faith.join(c_df, on=['ord', 'X', 'Y', 'S'], how='full', coalesce=True)
+    df_faith = df_faith.join(fisher_df, on=['ord', 'X', 'Y', 'S'], how='full', coalesce=True)
     df_faith = df_faith.join(_df_fedci, on=['ord', 'X', 'Y', 'S'], how='full', coalesce=True)
 
     # TODO: df_fedci creates results for X=B and Y=C even though they are never observed together
@@ -601,17 +603,31 @@ def run_comparison(setup):
 
     #print(found_correct_pag_fedci, found_correct_pag_pvalagg)
 
-    log_results(data_dir, data_file, metrics_fedci, metrics_fedci_ot, metrics_fisher, metrics_fisher_ot, ALPHA, num_samples, 2, [split_perc,1-split_perc], pag_id, is_faithful)
+    log_results(data_dir, data_file, metrics_fedci, metrics_fedci_ot, metrics_fisher, metrics_fisher_ot, ALPHA, num_samples, 2, [split_perc,1-split_perc], pag_id)
 
 
 import os
 
 pag_lookup = {i: pag for i, pag in enumerate(truePAGs)}
 
-faithful_data = set([f.rpartition('-')[0] for f in os.listdir('experiments/datasets/f2')])
-unfaithful_data = set([f.rpartition('-')[0] for f in os.listdir('experiments/datasets/uf2')])
+dataset_dir = 'experiments/datasets/data3'
+dataset_files = os.listdir(dataset_dir)
+dataset_files_subset = {}
+for f in dataset_files:
+    id = f.rpartition('-')[0]
+    if 'd1_' in f:
+        idx = 0
+    elif 'd2_' in f:
+        idx = 1
+    else:
+        assert False, 'Bad file encountered'
 
-configurations = [(id, True) for id in faithful_data] + [(id, False) for id in unfaithful_data]
+    if id not in dataset_files_subset:
+        dataset_files_subset[id] = [[], []]
+    dataset_files_subset[id][idx].append(dataset_dir+'/'+f)
+
+
+configurations = [(id, client_files) for id, client_files in dataset_files_subset.items() if '-g' == id[-2:] and '50000' in id]
 
 from tqdm.contrib.concurrent import process_map
 
