@@ -1,0 +1,47 @@
+{
+  "name": "Project Dev Container",
+
+  //Use the existing Dockerfile
+  "build": {
+    "dockerfile": "../Dockerfile.dev",
+    "context": ".."
+  },
+
+  // Add any additional features you want in the dev environment
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  // Configure container-specific settings
+  "settings": {
+    "terminal.integrated.shell.linux": "/bin/bash"
+  },
+
+  // Add extensions for your dev environment
+  "customizations": {},
+
+  // Mount your source code
+  // fix SELinux permission problem when mounting
+  // --> No idea why workspaceFolder is not default when logging on
+  //"workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/${localWorkspaceFolderBasename},type=bind,Z",
+  //"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/code/${localWorkspaceFolderBasename},type=bind",
+  "workspaceFolder": "/code/${localWorkspaceFolderBasename}",
+  // "runArgs": [
+  //     // other args
+  //     "--volume=${localWorkspaceFolder}:/code/${localWorkspaceFolderBasename}:Z"
+  // ],
+
+  // Use specific user to avoid file permission issues
+  "remoteUser": "dev",
+  "containerUser": "dev",
+
+  // Forward ports if needed
+  "forwardPorts": [8000, 8001, 8002, 8501],
+
+  // Wait for the container to be ready
+  "waitFor": "onCreateCommand",
+  // Run commands after container is created
+  "postCreateCommand": "echo 'Container is ready!'"
+}
