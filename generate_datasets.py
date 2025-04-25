@@ -295,7 +295,6 @@ def test_ci(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
 
                 if is_faithful:
                     faithful_partition_cnt += 1
-                    continue
                 dfs2.append(_df)
 
             if faithful_partition_cnt > 0 and cnt < CNT_MAX:
@@ -610,7 +609,7 @@ configurations = [(i,) + c for i in range(NUM_TESTS) for c in configurations]
 #from fedci.env import OVR, EXPAND_ORDINALS
 #print(OVR, EXPAND_ORDINALS)
 
-for configuration in tqdm(configurations):
+for configuration in tqdm(configurations[::-1]):
     generate_dataset(configuration)
 
 #process_map(run_comparison, configurations, max_workers=4, chunksize=1)

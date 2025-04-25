@@ -34,6 +34,8 @@ class LikelihoodRatioTest():
         t0_dof = t0.get_degrees_of_freedom()
         t1_dof = t1.get_degrees_of_freedom()
 
+        #print('T')
+
         p_val = scipy.stats.chi2.sf(2*(t1_llf - t0_llf), t1_dof-t0_dof)
 
         if DEBUG >= 2:

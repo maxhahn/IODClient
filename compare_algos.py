@@ -444,7 +444,7 @@ ALPHA = 0.05
 # 500,1000,5000,10000 with 2,4 clients 10 times
 
 #test_setups = test_setups[5:10]
-data_dir = './experiments/simulation/iod_comp2'
+data_dir = './experiments/simulation/result3a'
 data_file_pattern = '{}-{}.ndjson'
 
 faithful_path = './experiments/datasets/f2/'
@@ -457,8 +457,8 @@ def run_comparison(setup):
 
     target_file = 'experiments/simulation/results3/' + data_id + '-result.parquet'
 
-    if os.path.exists(target_file):
-        return
+    #if os.path.exists(target_file):
+    #    return
 
     dfs1 = []
     dfs2 = []
@@ -533,6 +533,48 @@ def run_comparison(setup):
         return df, client_labels
 
 
+    ### get true pvals ( again :( )
+
+    df1 = pl.concat(dfs1)
+    df2 = pl.concat(dfs2)
+    labels_intersect = sorted(list(set(df1.columns) & set(df2.columns)))
+    df_intersect = pl.concat([df1.select(labels_intersect), df2.select(labels_intersect)])
+
+    df1r, df1l = mxm_ci_test(df1)
+    df2r, df2l = mxm_ci_test(df2)
+    df_intersectr, df_intersectl = mxm_ci_test(df_intersect)
+
+    df1r = pl.from_pandas(df1r)
+    label_mapping = {str(i):l for i,l in enumerate(df1l, start=1)}
+    df1r = df1r.with_columns(
+        pl.col('X').cast(pl.Utf8).replace(label_mapping),
+        pl.col('Y').cast(pl.Utf8).replace(label_mapping),
+        pl.col('S').str.split(',').list.eval(pl.element().replace(label_mapping)).list.sort().list.join(','),
+    )
+
+    df2r = pl.from_pandas(df2r)
+    label_mapping = {str(i):l for i,l in enumerate(df2l, start=1)}
+    df2r = df2r.with_columns(
+        pl.col('X').cast(pl.Utf8).replace(label_mapping),
+        pl.col('Y').cast(pl.Utf8).replace(label_mapping),
+        pl.col('S').str.split(',').list.eval(pl.element().replace(label_mapping)).list.sort().list.join(','),
+    )
+
+    df_intersectr = pl.from_pandas(df_intersectr)
+    label_mapping = {str(i):l for i,l in enumerate(df_intersectl, start=1)}
+    df_intersectr = df_intersectr.with_columns(
+        pl.col('X').cast(pl.Utf8).replace(label_mapping),
+        pl.col('Y').cast(pl.Utf8).replace(label_mapping),
+        pl.col('S').str.split(',').list.eval(pl.element().replace(label_mapping)).list.sort().list.join(','),
+    )
+
+    df1r = df1r.join(df_intersectr, on=['ord', 'X', 'Y', 'S'], how='anti')
+    df2r = df2r.join(df_intersectr, on=['ord', 'X', 'Y', 'S'], how='anti')
+
+    df_pooled = pl.concat([df1r, df2r, df_intersectr])
+    df_pooled = df_pooled.rename({'pvalue': 'pvalue_pooled'})
+
+
     ## Run p val agg IOD
 
     # since use of own CI test, this throws errors on small sample sizes
@@ -566,6 +608,7 @@ def run_comparison(setup):
 
     df_faith = df_faith.join(fisher_df, on=['ord', 'X', 'Y', 'S'], how='full', coalesce=True)
     df_faith = df_faith.join(_df_fedci, on=['ord', 'X', 'Y', 'S'], how='full', coalesce=True)
+    df_faith = df_faith.join(df_pooled, on=['ord', 'X', 'Y', 'S'], how='full', coalesce=True)
 
     # TODO: df_fedci creates results for X=B and Y=C even though they are never observed together
 
@@ -573,8 +616,9 @@ def run_comparison(setup):
 
     df_faith = df_faith.with_columns(
         indep_fisher=pl.col('pvalue_fisher') > ALPHA,
-        indep_fedci=pl.col('pvalue_fedci') > ALPHA
-    ).drop('pvalue_fisher', 'pvalue_fedci')
+        indep_fedci=pl.col('pvalue_fedci') > ALPHA,
+        indep_pooled=pl.col('pvalue_pooled') > ALPHA
+    )#.drop('pvalue_fisher', 'pvalue_fedci')
 
 
     df_faith.write_parquet(target_file)
@@ -627,7 +671,7 @@ for f in dataset_files:
     dataset_files_subset[id][idx].append(dataset_dir+'/'+f)
 
 
-configurations = [(id, client_files) for id, client_files in dataset_files_subset.items() if '-g' == id[-2:] and '50000' in id]
+configurations = [(id, client_files) for id, client_files in dataset_files_subset.items() if '50000' in id and '-g' == id[-2:]]
 
 from tqdm.contrib.concurrent import process_map
 
