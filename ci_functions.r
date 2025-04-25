@@ -122,11 +122,19 @@ msep <- function(true_pag_amat, x, y, s) {
 }
 
 run_ci_test <- function(data, max_cond_set_cardinality, filedir, filename) {
+  data[] <- lapply(data, function(col) {
+      if (is.integer(col)) {
+          factor(col, levels = sort(unique(col)), ordered = TRUE)
+      } else {
+          col
+      }
+  })
   labels <- colnames(data)
   indepTest <- mixedCITest
   suffStat <- getMixedCISuffStat(dat = data,
                                  vars_names = labels,
                                  covs_names = c())
+  suffStat$verbose <- TRUE
   citestResults <- getAllCITestResults(data,
                                       indepTest,
                                       suffStat,
@@ -136,6 +144,18 @@ run_ci_test <- function(data, max_cond_set_cardinality, filedir, filename) {
                                       citestResults_folder=filedir)
   result <- list(citestResults=citestResults, labels=labels)
   result
+}
+
+run_ci_test2 <- function(x,y,s,data) {
+    data[] <- lapply(data, function(col) {
+        if (is.integer(col)) {
+            factor(col, levels = sort(unique(col)), ordered = TRUE)
+        } else {
+            col
+        }
+    })
+    r <- MXM::ci.mm(x,y,s,data)
+    r
 }
 
 

@@ -276,19 +276,11 @@ class OrdinalComputationUnit(ComputationUnit):
             mus_diff = [(mus_diff[i][0], sign_fix[:,i]) for i in range(len(mus_diff))]
         mus_diff = [(l, np.clip(p, 1e-8, None)) for l,p in mus_diff]
 
-        llf = 0
-        llf_saturated = 0
-        reference_level_indices = np.ones(len(data))
-        for i in range(len(mus_diff)-1):
-            level, mu_diff = mus_diff[i]
-            level_int = int(level.split('__ord__')[-1])
-            current_level_indices = data[y_label].to_numpy() == level_int
-            reference_level_indices = reference_level_indices * (1-current_level_indices)
+        prob_matrix = np.column_stack([p for _, p in mus_diff])  # shape: (n_samples, n_classes)
 
-            llf += np.sum(np.log(np.take(mu_diff, current_level_indices.nonzero()[0])))
-        _, mu_diff = mus_diff[-1]
-        llf += np.sum(np.log(np.take(mu_diff, reference_level_indices.nonzero()[0])))
-        deviance = 2 * (llf_saturated - llf)
+        y = data[y_label].to_numpy().astype(int)
+        llf = np.sum(np.log(prob_matrix[np.arange(len(y)), y-1]))
+        deviance = -2 * llf
 
         return {
             'llf': llf,
