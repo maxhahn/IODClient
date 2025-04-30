@@ -218,13 +218,13 @@ def get_correlation(df, identifiers, colx, coly):
 
 #identifiers = ['ord', 'X', 'Y', 'S']
 identifiers = []
-#identifiers = ['faithfulness', 'MSep']
+identifiers = ['faithfulness', 'MSep']
 
 df_fed = get_correlation(df, identifiers, 'pvalue_fedci', 'pvalue_pooled').rename({'p_value_correlation': 'Federated'})
 df_fisher = get_correlation(df, identifiers, 'pvalue_fisher', 'pvalue_pooled').rename({'p_value_correlation': 'Meta-Analysis'})
 
 if len(identifiers) == 0:
-    _df = pl.concat([df_fed.select('Federated'), df_fisher.select('Meta-Analysis')], how='horizontal')
+    _df = pl.concat([df_fed[0].select('Federated'), df_fisher[0].select('Meta-Analysis')], how='horizontal')
 else:
     _df = df.select(identifiers).unique().join(
         df_fed, on=identifiers, how='left'
