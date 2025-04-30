@@ -144,7 +144,7 @@ def mxm_ci_test(df):
 def test_ci(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
     labels1 = set(test_setup[1][0])
     labels2 = set(test_setup[1][1])
-    label_intersect = labels1 & labels2
+    label_intersect = labels1 | labels2 # just test whole dataset... labels1 & labels2
 
     labels1 = sorted(list(labels1))
     labels2 = sorted(list(labels2))
@@ -514,7 +514,7 @@ test_setups = [(pag, subset, i) for i,(pag,subset) in enumerate(zip(truePAGs, su
 #test_setups = test_setups[:1]
 
 #test_setups = test_setups[:1]
-NUM_TESTS = 4
+NUM_TESTS = 1
 # ls -la experiments/datasets/*/*-100000-faith.parquet | wc -l
 ALPHA = 0.05
 
@@ -582,7 +582,7 @@ def generate_dataset(setup):
 
     now = int(datetime.datetime.utcnow().timestamp()*1e3)
 
-    ds_file_pattern = './experiments/datasets/data3/{}-{}-{}-{}-{}-{}.parquet'
+    ds_file_pattern = './experiments/datasets/data4/{}-{}-{}-{}-{}-{}.parquet'
 
     for i,df1 in enumerate(dfs1):
         df1.write_parquet(ds_file_pattern.format(now, test_setup[2], num_samples, max(perc_split), faith_id, f'd1_{i}'))
@@ -605,11 +605,16 @@ configurations = list(itertools.product(test_setups, num_samples_options, split_
 configurations = [(data_dir, data_file_pattern) + c for c in configurations]
 configurations = [(i,) + c for i in range(NUM_TESTS) for c in configurations]
 
+#configurations = configurations[20:-20]
+
 #from tqdm.contrib.concurrent import process_map
 #from fedci.env import OVR, EXPAND_ORDINALS
 #print(OVR, EXPAND_ORDINALS)
 
-for configuration in tqdm(configurations[::-1]):
+import random
+random.shuffle(configurations)
+
+for configuration in tqdm(configurations):
     generate_dataset(configuration)
 
 #process_map(run_comparison, configurations, max_workers=4, chunksize=1)

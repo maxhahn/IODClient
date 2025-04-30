@@ -456,8 +456,11 @@ def run_comparison(setup):
 
     target_file = 'experiments/simulation/results3/' + data_id + '-result.parquet'
 
-    #if os.path.exists(target_file):
-    #    return
+    if os.path.exists(target_file):
+        return
+    if len(subset1_files) != 2 or len(subset2_files) != 2:
+        print('Bad number of files for', subset1_files, subset2_files)
+        return
 
     dfs1 = []
     dfs2 = []
@@ -670,7 +673,7 @@ for f in dataset_files:
     dataset_files_subset[id][idx].append(dataset_dir+'/'+f)
 
 
-configurations = [(id, client_files) for id, client_files in dataset_files_subset.items() if '50000' in id and '-g' == id[-2:]]
+configurations = [(id, client_files) for id, client_files in dataset_files_subset.items() if '50000' in id]# and '-g' == id[-2:]]
 
 from tqdm.contrib.concurrent import process_map
 

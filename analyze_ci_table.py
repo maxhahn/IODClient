@@ -28,8 +28,8 @@ for t,f in files_by_type.items():
 
 dfs = []
 for f in files:
-    if '1745511692009-7-50000-0.25-g-' not in f:
-        continue
+    #if '1745511692009-7-50000-0.25-g-' not in f:
+    #    continue
     df = pl.read_parquet(dir+'/'+f).with_columns(filename=pl.lit(f))
     dfs.append(df)
 
@@ -45,9 +45,28 @@ df = pl.concat(dfs)
 
 df = df.with_columns(faithfulness=pl.col('filename').str.split('-').list.get(-2))
 
+faithfulness_filter = None#'g'
+
+
+if faithfulness_filter is None:
+    faithfulness_filter= 'all'
+else:
+    df = df.filter(pl.col('faithfulness') == faithfulness_filter)
+
+#overlap = df.select(x=pl.col('X')+pl.col('Y')+pl.col('S').str.replace_all(',', ''))['x'].to_list()
+#overlap = [set(list(v)) for v in overlap]
+#overlap = set.intersection(*overlap)
+
+
+df = df.with_columns(
+    pvalue_diff_fedci_pooled=pl.col('pvalue_fedci')-pl.col('pvalue_pooled'),
+    pvalue_diff_fisher_pooled=pl.col('pvalue_fisher')-pl.col('pvalue_pooled')
+)
+
 print(df.columns)
 pl.Config.set_tbl_rows(50)
-print(df.select('X', 'Y', 'S', cs.contains('pvalue')))
+print(df.select('X', 'Y', 'S', 'filename', cs.contains('pvalue')).sort('pvalue_diff_fedci_pooled'))
+#print(df.select('X', 'Y', 'S', 'filename', cs.contains('pvalue')).sort('diff_pvalue')[0].to_dict())
 
 #df = pl.read_parquet(dir)
 
@@ -55,13 +74,15 @@ df = df.with_columns(
     correct_fisher=pl.col('MSep')==pl.col('indep_fisher'),
     correct_fedci=pl.col('MSep')==pl.col('indep_fedci'),
     correct_pooled=pl.col('MSep')==pl.col('indep_pooled'),
+    correct_as_pooled_fisher=pl.col('indep_pooled')==pl.col('indep_fisher'),
+    correct_as_pooled_fedci=pl.col('indep_pooled')==pl.col('indep_fedci'),
 )
 
 print(df.filter(~pl.col('correct_fedci') & pl.col('correct_fisher')).select('filename', 'X','Y','S',cs.contains('pvalue')))
 
 print(df.select(cs.starts_with('correct_')).mean())
 print(df.group_by('faithfulness').agg(cs.starts_with('correct_').mean()).with_columns(diff=pl.col('correct_fedci')-pl.col('correct_fisher')).sort('faithfulness'))
-print(df.group_by('faithfulness', 'MSep').agg(cs.starts_with('correct_').mean(), pl.len()).with_columns(diff=pl.col('correct_fedci')-pl.col('correct_fisher')).sort('faithfulness', 'MSep'))
+print(df.group_by('faithfulness', 'MSep').agg(cs.starts_with('correct_').mean(), pl.len()).sort('faithfulness', 'MSep'))
 #print(df.group_by('ord', 'X', 'Y', 'S').agg(pl.col('MSep').first(), cs.starts_with('correct_').sum(), pl.len()).sort('ord', 'X', 'Y', 'S'))
 #print(df.group_by('ord', 'X', 'Y', 'S').agg(pl.col('MSep').first(), cs.starts_with('correct_').sum() / pl.len(), pl.len()).sort('ord', 'X', 'Y', 'S'))
 
@@ -82,7 +103,7 @@ _df = df.filter(pl.col('MSep'))
 plot = _df.hvplot.scatter(
     x='pvalue_pooled',
     y=['pvalue_fedci', 'pvalue_fisher'],
-    alpha=0.6,
+    alpha=0.8,
     ylim=(-0.01,1.01),
     xlim=(-0.01,1.01),
     width=400,
@@ -99,14 +120,14 @@ plot = _df.hvplot.scatter(
 )
 
 _render =  hv.render(plot, backend='matplotlib')
-_render.savefig(f'images/ci_table/scatter-indep.svg', format='svg', bbox_inches='tight', dpi=300)
+_render.savefig(f'images/ci_table/scatter-indep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 _df = df.filter(~pl.col('MSep'))
 
 plot = _df.hvplot.scatter(
     x='pvalue_pooled',
     y=['pvalue_fedci', 'pvalue_fisher'],
-    alpha=0.6,
+    alpha=0.8,
     ylim=(-0.001,0.1),
     xlim=(-0.001,0.1),
     width=400,
@@ -123,33 +144,74 @@ plot = _df.hvplot.scatter(
 )
 
 _render =  hv.render(plot, backend='matplotlib')
-_render.savefig(f'images/ci_table/scatter-dep.svg', format='svg', bbox_inches='tight', dpi=300)
+_render.savefig(f'images/ci_table/scatter-dep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+
+def get_correlation(df, identifiers, colx, coly):
+    _df = df
+
+    _df = _df.group_by(
+        identifiers
+    ).agg(
+        p_value_correlation=pl.corr(colx, coly)
+    )
+
+    _df = _df.with_columns(pl.col('p_value_correlation').fill_nan(None).fill_null(pl.lit(1)))
+
+    return _df
+
+identifiers = ['ord', 'X', 'Y', 'S']
+
+df_fed = get_correlation(df, identifiers, 'pvalue_fedci', 'pvalue_pooled').rename({'p_value_correlation': 'Federated'})
+df_fisher = get_correlation(df, identifiers, 'pvalue_fisher', 'pvalue_pooled').rename({'p_value_correlation': 'Meta-Analysis'})
+
+_df = df.select(identifiers).unique().join(
+    df_fed, on=identifiers, how='left'
+).join(
+    df_fisher, on=identifiers, how='left'
+)
+
+_df = _df.with_columns(diff=pl.col('Federated')-pl.col('Meta-Analysis')).sort('diff')
+#print(_df)
+
+# TODO: visualize?
+#
+#
+
+###
+# Boxplot of p value diff
+###
+
+_df = df
+
+_df = _df.rename({
+    'pvalue_diff_fedci_pooled': 'Federated',
+    'pvalue_diff_fisher_pooled': 'Meta-Analysis',
+})
+
+plot = _df.hvplot.box(
+    y=['Federated', 'Meta-Analysis'],
+    ylabel=r'p-value difference',
+)
+
+_render =  hv.render(plot, backend='matplotlib')
+_render.savefig(f'images/ci_table/pval_diff_box-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 
+###
+# Boxplot of p value diff for MSep only
+###
 
-# def get_correlation(df, identifiers, colx, coly):
-#     _df = df
+_df = df.filter(pl.col('MSep'))
 
-#     _df = _df.group_by(
-#         identifiers
-#     ).agg(
-#         p_value_correlation=pl.corr(colx, coly)
-#     )
+_df = _df.rename({
+    'pvalue_diff_fedci_pooled': 'Federated',
+    'pvalue_diff_fisher_pooled': 'Meta-Analysis',
+})
 
-#     _df = _df.with_columns(pl.col('p_value_correlation').fill_nan(None))
+plot = _df.hvplot.box(
+    y=['Federated', 'Meta-Analysis'],
+    ylabel=r'p-value difference',
+)
 
-#     return _df
-
-# identifiers = ['ord', 'X', 'Y', 'S']
-
-# df_fed = get_correlation(df, identifiers, 'pvalue_fedci', 'pvalue_pooled').rename({'p_value_correlation': 'Federated'})
-# df_fisher = get_correlation(df, identifiers, 'pvalue_fisher', 'pvalue_pooled').rename({'p_value_correlation': 'Meta-Analysis'})
-
-# _df = df.select(identifiers).unique().join(
-#     df_fed, on=identifiers, how='left'
-# ).join(
-#     df_fisher, on=identifiers, how='left'
-# )
-
-# _df = _df.with_columns(diff=pl.col('Federated')-pl.col('Meta-Analysis')).sort('diff')
-# print(_df)
+_render =  hv.render(plot, backend='matplotlib')
+_render.savefig(f'images/ci_table/pval_diff_box_indep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
