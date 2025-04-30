@@ -46,6 +46,10 @@ df = pl.concat(dfs)
 df = df.with_columns(faithfulness=pl.col('filename').str.split('-').list.get(-2))
 
 faithfulness_filter = None#'g'
+#faithfulness_filter = 'g'
+#faithfulness_filter = 'l'
+#faithfulness_filter = 'gl'
+#faithfulness_filter = 'n'
 
 
 if faithfulness_filter is None:
@@ -98,11 +102,19 @@ import holoviews as hv
 
 hvplot.extension('matplotlib')
 
+print('=== Now plotting scatter of pvalues')
+
 _df = df.filter(pl.col('MSep'))
+_df = _df.sample(min(len(_df), 200))
+
+_df = _df.rename({
+    'pvalue_fedci': 'Federated',
+    'pvalue_fisher': 'Meta-Analysis',
+})
 
 plot = _df.hvplot.scatter(
     x='pvalue_pooled',
-    y=['pvalue_fedci', 'pvalue_fisher'],
+    y=['Federated', 'Meta-Analysis'],
     alpha=0.8,
     ylim=(-0.01,1.01),
     xlim=(-0.01,1.01),
@@ -123,10 +135,16 @@ _render =  hv.render(plot, backend='matplotlib')
 _render.savefig(f'images/ci_table/scatter-indep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 _df = df.filter(~pl.col('MSep'))
+_df = _df.sample(min(len(_df), 2000))
+
+_df = _df.rename({
+    'pvalue_fedci': 'Federated',
+    'pvalue_fisher': 'Meta-Analysis',
+})
 
 plot = _df.hvplot.scatter(
     x='pvalue_pooled',
-    y=['pvalue_fedci', 'pvalue_fisher'],
+    y=['Federated', 'Meta-Analysis'],
     alpha=0.8,
     ylim=(-0.001,0.1),
     xlim=(-0.001,0.1),
@@ -146,32 +164,75 @@ plot = _df.hvplot.scatter(
 _render =  hv.render(plot, backend='matplotlib')
 _render.savefig(f'images/ci_table/scatter-dep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
+
+_df = df
+_df = _df.sample(min(len(_df), 2000))
+
+_df = _df.rename({
+    'pvalue_fedci': 'Federated',
+    'pvalue_fisher': 'Meta-Analysis',
+})
+
+plot = _df.hvplot.scatter(
+    x='pvalue_pooled',
+    y=['Federated', 'Meta-Analysis'],
+    alpha=0.8,
+    ylim=(-0.001,0.1),
+    xlim=(-0.001,0.1),
+    width=400,
+    height=400,
+    #by='Method',
+    legend='bottom_right',
+    #backend='matplotlib',
+    s=4000,
+    xlabel=r'Baseline p-value',  # LaTeX-escaped #
+    ylabel=r'Predicted p-value',
+    marker=['v', '^'],
+    #linestyle=['dashed', 'dotted']
+    #title=f'{"Client" if i == 1 else "Clients"}'
+)
+
+_render =  hv.render(plot, backend='matplotlib')
+_render.savefig(f'images/ci_table/scatter-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+
+
+
+
+print('=== Now calculating correlation of pvalues')
+
 def get_correlation(df, identifiers, colx, coly):
     _df = df
 
-    _df = _df.group_by(
-        identifiers
-    ).agg(
-        p_value_correlation=pl.corr(colx, coly)
-    )
+    if len(identifiers) == 0:
+        _df = _df.with_columns(p_value_correlation=pl.corr(colx, coly))
+    else:
+        _df = _df.group_by(
+            identifiers
+        ).agg(
+            p_value_correlation=pl.corr(colx, coly)
+        )
 
     _df = _df.with_columns(pl.col('p_value_correlation').fill_nan(None).fill_null(pl.lit(1)))
 
     return _df
 
-identifiers = ['ord', 'X', 'Y', 'S']
+#identifiers = ['ord', 'X', 'Y', 'S']
+identifiers = []
+#identifiers = ['faithfulness', 'MSep']
 
 df_fed = get_correlation(df, identifiers, 'pvalue_fedci', 'pvalue_pooled').rename({'p_value_correlation': 'Federated'})
 df_fisher = get_correlation(df, identifiers, 'pvalue_fisher', 'pvalue_pooled').rename({'p_value_correlation': 'Meta-Analysis'})
 
-_df = df.select(identifiers).unique().join(
-    df_fed, on=identifiers, how='left'
-).join(
-    df_fisher, on=identifiers, how='left'
-)
-
-_df = _df.with_columns(diff=pl.col('Federated')-pl.col('Meta-Analysis')).sort('diff')
-#print(_df)
+if len(identifiers) == 0:
+    _df = pl.concat([df_fed.select('Federated'), df_fisher.select('Meta-Analysis')], how='horizontal')
+else:
+    _df = df.select(identifiers).unique().join(
+        df_fed, on=identifiers, how='left'
+    ).join(
+        df_fisher, on=identifiers, how='left'
+    )
+print('Showing correlation to baseline')
+print(_df.with_columns(diff=pl.col('Federated')-pl.col('Meta-Analysis')).sort('diff'))
 
 # TODO: visualize?
 #
@@ -181,7 +242,14 @@ _df = _df.with_columns(diff=pl.col('Federated')-pl.col('Meta-Analysis')).sort('d
 # Boxplot of p value diff
 ###
 
+print('=== Now plotting boxplots of pvalue difference to pooled baseline')
+
 _df = df
+
+# p-value approx = 0 appears to be way too easy. Make sure pvalues on pooled data are at least slightly away from 0 for plot
+l1 = len(_df)
+_df = _df.filter(pl.col('pvalue_pooled') > 1e-8)
+print(f'All data: Removed {100-(len(_df)/l1)*100:.3f}% ({l1-len(_df)} samples) of data because of proximity to 0')
 
 _df = _df.rename({
     'pvalue_diff_fedci_pooled': 'Federated',
@@ -190,17 +258,52 @@ _df = _df.rename({
 
 plot = _df.hvplot.box(
     y=['Federated', 'Meta-Analysis'],
-    ylabel=r'p-value difference',
+    ylabel=r'p-value Difference',
+    xlabel='Method',
+    #ylim=(-0.000005,0.000005)
+    showfliers=False
 )
 
 _render =  hv.render(plot, backend='matplotlib')
 _render.savefig(f'images/ci_table/pval_diff_box-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 
-###
-# Boxplot of p value diff for MSep only
-###
+_df = df.filter(~pl.col('MSep'))
 
+# Normalize (not really working)
+# _df = _df.with_columns(max_diff=pl.max_horizontal('pvalue_diff_fedci_pooled', 'pvalue_diff_fisher_pooled'))
+# max_diff = _df['max_diff'].max()
+# _df = _df.with_columns(
+#     pvalue_diff_fedci_pooled=pl.col('pvalue_diff_fedci_pooled') / max_diff,
+#     pvalue_diff_fisher_pooled=pl.col('pvalue_diff_fisher_pooled') / max_diff,
+# )
+
+#_df = _df.filter((pl.col('pvalue_diff_fedci_pooled') != 0) & (pl.col('pvalue_diff_fisher_pooled') != 0))
+
+# p-value approx = 0 appears to be way too easy. Make sure pvalues on pooled data are at least slightly away from 0 for plot
+l1 = len(_df)
+_df = _df.filter(pl.col('pvalue_pooled') > 1e-8)
+print(f'Not MSep plot: Removed {100-(len(_df)/l1)*100:.3f}% ({l1-len(_df)} samples) of data because of proximity to 0')
+
+_df = _df.rename({
+    'pvalue_diff_fedci_pooled': 'Federated',
+    'pvalue_diff_fisher_pooled': 'Meta-Analysis',
+})
+
+plot = _df.hvplot.box(
+    y=['Federated', 'Meta-Analysis'],
+    ylabel=r'p-value Difference',
+    xlabel='Method',
+    #ylim=(-0.000005,0.000005)
+    showfliers=False
+)
+
+_render =  hv.render(plot, backend='matplotlib')
+_render.savefig(f'images/ci_table/pval_diff_box_dep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+
+
+
+# MSep Box
 _df = df.filter(pl.col('MSep'))
 
 _df = _df.rename({
@@ -210,8 +313,51 @@ _df = _df.rename({
 
 plot = _df.hvplot.box(
     y=['Federated', 'Meta-Analysis'],
-    ylabel=r'p-value difference',
+    ylabel=r'p-value Difference',
+    xlabel='Method',
+    showfliers=False
 )
 
 _render =  hv.render(plot, backend='matplotlib')
 _render.savefig(f'images/ci_table/pval_diff_box_indep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+
+
+###
+# Decision agreements
+###
+
+print('=== Now calculating % of decision agreements')
+
+def get_accuracy(df, identifiers, colx, coly, alpha):
+    df = df.with_columns(
+        tp=(pl.col(colx) < alpha) & (pl.col(coly) < alpha),
+        tn=(pl.col(colx) > alpha) & (pl.col(coly) > alpha),
+        fp=(pl.col(colx) < alpha) & (pl.col(coly) > alpha),
+        fn=(pl.col(colx) > alpha) & (pl.col(coly) < alpha),
+    )
+    if len(identifiers) == 0:
+        df = df.select((pl.col('tp')+pl.col('tn')).mean().alias('accuracy'))
+    else:
+        df = df.group_by(identifiers).agg((pl.col('tp')+pl.col('tn')).mean().alias('accuracy'))
+    return df
+
+alpha = 0.05
+
+#identifiers = ['ord', 'X', 'Y', 'S']
+identifiers = []
+identifiers = ['faithfulness', 'MSep']
+
+
+df_fed = get_accuracy(df, identifiers, 'pvalue_fedci', 'pvalue_pooled', alpha).rename({'accuracy': 'Federated'})
+df_fisher = get_accuracy(df, identifiers, 'pvalue_fisher', 'pvalue_pooled', alpha).rename({'accuracy': 'Meta-Analysis'})
+
+if len(identifiers) == 0:
+    _df = pl.concat([df_fed, df_fisher], how='horizontal')
+else:
+    _df = df.select(identifiers).unique().join(
+        df_fed, on=identifiers, how='left'
+    ).join(
+        df_fisher, on=identifiers, how='left'
+    )
+print('Showing % of decision agreements')
+print(_df.with_columns(diff=pl.col('Federated')- pl.col('Meta-Analysis')).sort('diff'))
