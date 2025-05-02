@@ -1,5 +1,5 @@
 from .client import Client
-from .testing import TestEngine
+from .testing import TestEngine, TestEngine2
 from .env import DEBUG
 from typing import List, Dict
 import rpyc
@@ -30,7 +30,8 @@ class Server():
 
         for client in self.clients.values(): client.provide_expressions(self.category_expressions, self.ordinal_expressions)
 
-        self.test_engine: TestEngine = TestEngine(
+        self.test_engine: TestEngine2 = TestEngine2(
+            client_schemas=self.client_schemas,
             schema=self.schema,
             category_expressions=self.category_expressions,
             ordinal_expressions=self.ordinal_expressions,

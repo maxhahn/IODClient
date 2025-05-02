@@ -240,13 +240,16 @@ configurations = list(itertools.product(node_collections, num_samples, num_clien
 configurations = [c + file_info for c in configurations]
 test_targets_uncon = [('X', 'Y', ())]
 test_targets_con = [('X', 'Y', ('Z',))]
-configurations = [c + (test_targets_uncon,) if 'Unc.' in c[0].name else c + (test_targets_con,) for c in configurations]
+#configurations = [c + (test_targets_uncon,) if 'Unc.' in c[0].name else c + (test_targets_con,) for c in configurations]
 
-num_runs = 50
+configurations = [c + (None,) for c in configurations]
+
+num_runs = 1
 
 configurations *= num_runs
 
 # Run tests
-process_map(run_configured_test, configurations, max_workers=5, chunksize=1)
-#for i, configuration in enumerate(tqdm(configurations)):
-#    run_configured_test(configuration)
+#process_map(run_configured_test, configurations, max_workers=5, chunksize=1)
+for i, configuration in enumerate(tqdm(configurations[::-1])):
+    run_configured_test(configuration)
+    break

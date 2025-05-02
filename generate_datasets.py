@@ -584,6 +584,10 @@ def generate_dataset(setup):
 
     ds_file_pattern = './experiments/datasets/data4/{}-{}-{}-{}-{}-{}.parquet'
 
+    # THREE TAIL PAGS
+    #  [1]  2 16 18 19 20 23 29 31 37 42 44 53 57 58 62 64 66 69 70 72 73 74 75 79 81 82 83 84 93 98
+
+
     for i,df1 in enumerate(dfs1):
         df1.write_parquet(ds_file_pattern.format(now, test_setup[2], num_samples, max(perc_split), faith_id, f'd1_{i}'))
     for i,df2 in enumerate(dfs2):
@@ -598,6 +602,12 @@ def generate_dataset(setup):
 #num_client_options = [4]
 num_samples_options = [50_000] #, 50_000, 100_000]
 split_options = [[0.25, 0.25, 0.25, 0.25]]#[0.1,0.5]
+
+
+# 10_000 globally -> does it give faithfulness?
+#
+#
+
 
 # 1745260633172-2 PAG 2 LOOKING FINE!
 

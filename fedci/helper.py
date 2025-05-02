@@ -167,7 +167,8 @@ def run_test_on_data(dgp_nodes,
         for col, dtype in sorted(data.schema.items(), key=lambda x: x[0]):
             print(f"{col} - {dtype}")
 
-    clients = {i:Client(chunk) for i, chunk in enumerate(client_data_chunks)}
+    clients = {i:Client(chunk) if i != 0 else Client(chunk.select('X', 'Y')) for i, chunk in enumerate(client_data_chunks)}
+
     server = Server(
         clients,
         max_regressors=max_regressors,

@@ -167,6 +167,53 @@ class Test():
 
         return False
 
+class TestEngine2():
+    def __init__(
+        self,
+        client_schemas,
+        schema,
+        category_expressions,
+        ordinal_expressions,
+        max_regressors=None,
+        max_iterations=25,
+        test_targets=None
+        ):
+
+        self.tests = []
+        self.required_tests = {}
+
+        variable_availability = {}
+        for c, _schema in client_schemas.items():
+            for v in _schema:
+                variable_availability[v] = variable_availability.get(v, set([])) | {c}
+        print(variable_availability)
+
+        variables = set(schema.keys())
+        max_conditioning_set_size = min(len(variables)-1, max_regressors) if max_regressors is not None else len(variables)-1
+
+        all_test_targets = set(sum([(a,b) for a,b,_ in test_targets], ())) if test_targets is not None else None
+
+        for y_var in variables:
+            variables_without_y = variables - {y_var}
+            for x_var in variables_without_y:
+                set_of_possible_regressors = variables_without_y - {x_var}
+                powerset_of_regressors = chain.from_iterable(combinations(set_of_possible_regressors, r) for r in range(0, max_conditioning_set_size+1))
+                for cond_set in powerset_of_regressors:
+                    cond_set = tuple(sorted(list(cond_set)))
+                    self.required_tests[(y_var, cond_set)] = self.required_tests.get((y_var, cond_set), []) + [x_var]
+        print(self.required_tests)
+
+        self.required_client_tests = {}
+        for req_test, x_vars in self.required_tests.items():
+            y_var, cond_set = req_test
+            for x_var in x_vars:
+                potential_clients = [variable_availability[v] for v in [y_var]+list(cond_set)]
+                #potential_clients_full_model = potential_clients + [variable_availability[x_var]]
+                potential_clients = set.intersection(*potential_clients)
+                #potential_clients_full_model = set.intersection(*potential_clients_full_model)
+                #print(f'{y_var} ~ {x_var}, {cond_set} -> {potential_clients}, {potential_clients_full_model}')
+
+
 
 class TestEngine():
     def __init__(self,
