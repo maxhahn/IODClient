@@ -144,14 +144,14 @@ def mxm_ci_test(df):
 def test_ci(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
     labels1 = set(test_setup[1][0])
     labels2 = set(test_setup[1][1])
-    label_intersect = labels1 | labels2 # just test whole dataset... labels1 & labels2
+    label_intersect = labels1 & labels2
 
     labels1 = sorted(list(labels1))
     labels2 = sorted(list(labels2))
     label_intersect = sorted(list(label_intersect))
 
 
-    CNT_MAX = 30
+    CNT_MAX = 40
     cnt = 0
     cnt_split_attempt = 0
     while True:
@@ -183,7 +183,7 @@ def test_ci(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
         cutoff = int(subset1_frac*len(df))
         is_faithful1 = True
         is_faithful2 = True
-        for _ in range(3):
+        for _ in range(2):
             _df = df.sample(fraction=1, shuffle=True)
             df1 = _df[:cutoff].select(labels1)
             df2 = _df[cutoff:].select(labels2)
@@ -229,6 +229,25 @@ def test_ci(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
             print(f'retry - {cnt} - subsets not faithful')
             cnt += 1
             continue
+
+        dfs1 = []
+        split_acc = 0
+        for split_perc in perc_split[0::2]:
+            cutoff_from = int(split_acc * len(df1) / subset1_frac)
+            cutoff_to = int((split_acc+split_perc) * len(df1) / subset1_frac)
+            split_acc += split_perc
+            _df = df1[cutoff_from:cutoff_to]
+            dfs1.append(_df)
+        dfs2 = []
+        split_acc = 0
+        for split_perc in perc_split[1::2]:
+            cutoff_from = int(split_acc * len(df2) / (1-subset1_frac))
+            cutoff_to = int((split_acc+split_perc) * len(df2) / (1-subset1_frac))
+            split_acc += split_perc
+            _df = df2[cutoff_from:cutoff_to]
+            dfs2.append(_df)
+
+        return dfs1, dfs2, None, is_faithful1, is_faithful2, is_faithful3
 
         for _ in range(3):
             faithful_partition_cnt = 0
@@ -443,6 +462,8 @@ def test_ci2(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
             cnt += 1
             continue
 
+        return dfs1, dfs2, None, is_faithful1, is_faithful2, is_faithful3
+
         #pl.Config.set_tbl_rows(50)
 
         result_dfs1 = []
@@ -510,7 +531,7 @@ def test_ci2(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
     return dfs1, dfs2, is_any_client_faithful, is_faithful1, is_faithful2, is_faithful3
 
 
-test_setups = [(pag, subset, i) for i,(pag,subset) in enumerate(zip(truePAGs, subsetsList))]
+test_setups = [(pag, subset, i) for i,(pag,subset) in enumerate(zip(truePAGs, subsetsList),start=1)]
 #test_setups = test_setups[:1]
 
 #test_setups = test_setups[:1]
@@ -582,10 +603,7 @@ def generate_dataset(setup):
 
     now = int(datetime.datetime.utcnow().timestamp()*1e3)
 
-    ds_file_pattern = './experiments/datasets/data4/{}-{}-{}-{}-{}-{}.parquet'
-
-    # THREE TAIL PAGS
-    #  [1]  2 16 18 19 20 23 29 31 37 42 44 53 57 58 62 64 66 69 70 72 73 74 75 79 81 82 83 84 93 98
+    ds_file_pattern = './experiments/datasets/data5/{}-{}-{}-{}-{}-{}.parquet'
 
 
     for i,df1 in enumerate(dfs1):
@@ -600,7 +618,7 @@ def generate_dataset(setup):
 #pl.Config.set_tbl_rows(20)
 
 #num_client_options = [4]
-num_samples_options = [50_000] #, 50_000, 100_000]
+num_samples_options = [20_000] #, 50_000, 100_000]
 split_options = [[0.25, 0.25, 0.25, 0.25]]#[0.1,0.5]
 
 
@@ -608,12 +626,16 @@ split_options = [[0.25, 0.25, 0.25, 0.25]]#[0.1,0.5]
 #
 #
 
+# THREE TAIL PAGS
+#  [1]  2 16 18 19 20 23 29 31 37 42 44 53 57 58 62 64 66 69 70 72 73 74 75 79 81 82 83 84 93 98
+three_tail_pags = [2, 16, 18, 19, 20, 23, 29, 31, 37, 42, 44, 53, 57, 58, 62, 64, 66, 69, 70, 72, 73, 74, 75, 79, 81, 82, 83, 84, 93, 98]
 
-# 1745260633172-2 PAG 2 LOOKING FINE!
+test_setups = [t for t in test_setups if t[2] in three_tail_pags]
 
 configurations = list(itertools.product(test_setups, num_samples_options, split_options))
 configurations = [(data_dir, data_file_pattern) + c for c in configurations]
 configurations = [(i,) + c for i in range(NUM_TESTS) for c in configurations]
+
 
 #configurations = configurations[20:-20]
 
