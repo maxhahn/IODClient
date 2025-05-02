@@ -14,7 +14,7 @@ from dgp import NodeCollection
 
 from .server import Server
 from .client import Client
-from .evaluation import get_symmetric_likelihood_tests, get_riod_tests, compare_tests_to_truth, fisher_test_combination
+from .evaluation import get_riod_tests, compare_tests_to_truth, fisher_test_combination
 from .env import DEBUG, EXPAND_ORDINALS, LOG_R, LR, RIDGE, NO_WRITE
 
 import rpy2.rinterface_lib.callbacks as cb
@@ -167,7 +167,7 @@ def run_test_on_data(dgp_nodes,
         for col, dtype in sorted(data.schema.items(), key=lambda x: x[0]):
             print(f"{col} - {dtype}")
 
-    clients = {i:Client(chunk) if i != 0 else Client(chunk.select('X', 'Y')) for i, chunk in enumerate(client_data_chunks)}
+    clients = {i:Client(chunk) for i, chunk in enumerate(client_data_chunks)}
 
     server = Server(
         clients,
@@ -178,7 +178,7 @@ def run_test_on_data(dgp_nodes,
 
     server.run()
 
-    fed_tests = get_symmetric_likelihood_tests(server.get_tests(), test_targets=test_targets)
+    fed_tests = server.get_likelihood_ratio_tests(symmetric=True)
     baseline_tests = get_riod_tests(data, max_regressors=max_regressors, test_targets=test_targets)
     fisher_tests = [get_riod_tests(d, max_regressors=max_regressors, test_targets=test_targets) for d in client_data_chunks]
 

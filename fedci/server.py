@@ -1,6 +1,6 @@
 from .client import Client
-from .testing import TestEngine, TestEngine2
-from .env import DEBUG
+from .testing import TestEngine, TestEnginePrecise
+from .env import DEBUG, PRECISE
 from typing import List, Dict
 import rpyc
 
@@ -10,6 +10,8 @@ class Server():
         self.clients = clients
         self.client_schemas = {}
         self.schema = {}
+
+        self.test_targets = test_targets
 
         for client_id, client in self.clients.items():
             client_schema = client.get_data_schema()
@@ -30,15 +32,25 @@ class Server():
 
         for client in self.clients.values(): client.provide_expressions(self.category_expressions, self.ordinal_expressions)
 
-        self.test_engine: TestEngine2 = TestEngine2(
-            client_schemas=self.client_schemas,
-            schema=self.schema,
-            category_expressions=self.category_expressions,
-            ordinal_expressions=self.ordinal_expressions,
-            max_regressors=max_regressors,
-            max_iterations=max_iterations,
-            test_targets=test_targets
-        )
+        if PRECISE == 1:
+            self.test_engine: TestEngine = TestEnginePrecise(
+                client_schemas=self.client_schemas,
+                schema=self.schema,
+                category_expressions=self.category_expressions,
+                ordinal_expressions=self.ordinal_expressions,
+                max_regressors=max_regressors,
+                max_iterations=max_iterations,
+                test_targets=test_targets
+            )
+        else:
+            self.test_engine: TestEngine = TestEngine(
+                schema=self.schema,
+                category_expressions=self.category_expressions,
+                ordinal_expressions=self.ordinal_expressions,
+                max_regressors=max_regressors,
+                max_iterations=max_iterations,
+                test_targets=test_targets
+            )
 
     def run(self):
         while not self.test_engine.is_finished():
@@ -63,6 +75,12 @@ class Server():
 
     def get_tests(self):
         return self.test_engine.tests
+
+    def get_likelihood_ratio_tests(self, symmetric=True):
+        if symmetric:
+            return self.test_engine.get_symmetric_likelihood_ratio_tests()
+        else:
+            return self.test_engine.get_likelihood_ratio_tests()
 
 class ProxyServerBuilder():
     def __init__(self, cls):
