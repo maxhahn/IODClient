@@ -4,6 +4,11 @@ import hvplot
 import hvplot.polars
 import holoviews as hv
 
+import matplotlib.pyplot as plt
+plt.rcParams.update({
+    "svg.fonttype": "none"
+})
+
 hvplot.extension('matplotlib')
 
 """
@@ -56,16 +61,22 @@ df = df.explode('federated_p_values', 'fisher_p_values', 'baseline_p_values')
 num_samples = 2000
 plot = None
 _df = df.filter(pl.col('num_samples') == num_samples)
+_df = _df.rename({
+    'federated_p_values': 'Federated',
+    'fisher_p_values': 'Meta-Analysis'
+})
 for i in [1,3,5,7]:
+
 
     __df = _df.filter(pl.col('num_clients') == i)
     #print(i, len(_df), len(__df))
     __df = __df.sample(min(1_000, len(__df)))
 
 
+
     _plot = __df.hvplot.scatter(
         x='baseline_p_values',
-        y=['federated_p_values', 'fisher_p_values'],
+        y=['Federated', 'Meta-Analysis'],
         alpha=0.6,
         ylim=(-0.01,1.01),
         xlim=(-0.01,1.01),
@@ -87,7 +98,7 @@ for i in [1,3,5,7]:
 
     _plot = __df.hvplot.scatter(
         x='baseline_p_values',
-        y=['federated_p_values', 'fisher_p_values'],
+        y=['Federated', 'Meta-Analysis'],
         alpha=0.6,
         ylim=(-0.01,0.1),
         xlim=(-0.01,0.1),
@@ -180,22 +191,6 @@ df_unpivot = _df.unpivot(
 
 df_unpivot = df_unpivot.rename({'num_samples': '# Samples', 'correlation': 'Correlation'})
 
-
-import matplotlib.pyplot as plt
-
-# plt.rcParams.update({
-#     "text.usetex": True,  # Use LaTeX for text rendering
-#     "font.family": "serif",
-#     "font.serif": ["Computer Modern Roman"],  # Matches LaTeX default
-# })
-
-plt.rcParams.update({
-    #"pgf.texsystem": "pdflatex",
-    #"text.usetex": True,  # Use LaTeX for all text rendering
-    #"font.family": "serif",
-    #"pgf.rcfonts": False,
-    "svg.fonttype": "none"
-})
 
 
 # Set up matplotlib to use LaTeX-style text rendering

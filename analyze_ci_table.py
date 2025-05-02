@@ -67,9 +67,9 @@ df = df.with_columns(
     pvalue_diff_fisher_pooled=pl.col('pvalue_fisher')-pl.col('pvalue_pooled')
 )
 
-print(df.columns)
+#print(df.columns)
 pl.Config.set_tbl_rows(50)
-print(df.select('X', 'Y', 'S', 'filename', cs.contains('pvalue')).sort('pvalue_diff_fedci_pooled'))
+#print(df.select('X', 'Y', 'S', 'filename', cs.contains('pvalue')).sort('pvalue_diff_fedci_pooled'))
 #print(df.select('X', 'Y', 'S', 'filename', cs.contains('pvalue')).sort('diff_pvalue')[0].to_dict())
 
 #df = pl.read_parquet(dir)
@@ -82,7 +82,7 @@ df = df.with_columns(
     correct_as_pooled_fedci=pl.col('indep_pooled')==pl.col('indep_fedci'),
 )
 
-print(df.filter(~pl.col('correct_fedci') & pl.col('correct_fisher')).select('filename', 'X','Y','S',cs.contains('pvalue')))
+#print(df.filter(~pl.col('correct_fedci') & pl.col('correct_fisher')).select('filename', 'X','Y','S',cs.contains('pvalue')))
 
 print(df.select(cs.starts_with('correct_')).mean())
 print(df.group_by('faithfulness').agg(cs.starts_with('correct_').mean()).with_columns(diff=pl.col('correct_fedci')-pl.col('correct_fisher')).sort('faithfulness'))
@@ -99,6 +99,11 @@ print(df.group_by('faithfulness', 'MSep').agg(cs.starts_with('correct_').mean(),
 import hvplot
 import hvplot.polars
 import holoviews as hv
+import matplotlib.pyplot as plt
+
+plt.rcParams.update({
+    "svg.fonttype": "none"
+})
 
 hvplot.extension('matplotlib')
 
@@ -361,3 +366,38 @@ else:
     )
 print('Showing % of decision agreements')
 print(_df.with_columns(diff=pl.col('Federated')- pl.col('Meta-Analysis')).sort('diff'))
+
+
+if faithfulness_filter == 'all':
+
+    _df = _df.rename({
+      'Federated': 'F',
+      'Meta-Analysis': 'MA'
+    })
+
+    _df = _df.with_columns(pl.col('faithfulness').replace_strict({
+        'g': 'global only',
+        'gl': 'faithful',
+        'l': 'local only',
+        'n': 'unfaithful'
+    }))
+
+    __df = _df.filter(pl.col('MSep'))
+    plot = __df.sort('faithfulness').hvplot.bar(
+        x='faithfulness',
+        y=['F', 'MA'],
+        xlabel='Performance Of Method Under Different Faithfulness Conditions',
+        #rot=30
+    )
+    _render =  hv.render(plot, backend='matplotlib')
+    _render.savefig(f'images/ci_accuracy/bar-dep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+
+    __df = _df.filter(~pl.col('MSep'))
+    plot = __df.sort('faithfulness').hvplot.bar(
+        x='faithfulness',
+        y=['F', 'MA'],
+        xlabel='Performance Of Method Under Different Faithfulness Conditions',
+        #rot=30
+    )
+    _render =  hv.render(plot, backend='matplotlib')
+    _render.savefig(f'images/ci_accuracy/bar-indep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
