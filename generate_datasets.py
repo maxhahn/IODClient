@@ -69,7 +69,7 @@ def get_dataframe_from_r(test_setup, num_samples, mode='mixed'):
         cnt += 1
         # get data from R function
         try:
-            dat = get_data_f(raw_true_pag, num_samples, var_levels, 'continuous' if cnt > 2 else mode, 0.2)
+            dat = get_data_f(raw_true_pag, num_samples, var_levels, 'continuous' if cnt > 2 else mode, 0.3)
         except:# ro.rinterface_lib.embedded.RRuntimeError as e:
             continue
 
@@ -199,6 +199,8 @@ def test_ci(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
                 pl.col('S').str.split(',').list.eval(pl.element().replace(mapping)).list.sort().list.join(','),
             )
 
+            result_subset1_df = result_subset1_df.join(result_intersect_df, on=['ord', 'X', 'Y', 'S'], how='anti')
+
             faithful_df = result_subset1_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
             is_faithful1 = faithful_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(faithful_df)
 
@@ -217,6 +219,8 @@ def test_ci(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
                 pl.col('Y').cast(pl.Utf8).replace(mapping),
                 pl.col('S').str.split(',').list.eval(pl.element().replace(mapping)).list.sort().list.join(','),
             )
+
+            result_subset2_df = result_subset2_df.join(result_intersect_df, on=['ord', 'X', 'Y', 'S'], how='anti')
 
             faithful_df = result_subset2_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
             is_faithful2 = faithful_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(faithful_df)
