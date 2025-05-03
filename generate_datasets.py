@@ -69,8 +69,9 @@ def get_dataframe_from_r(test_setup, num_samples, mode='mixed'):
         cnt += 1
         # get data from R function
         try:
-            dat = get_data_f(raw_true_pag, num_samples, var_levels, 'continuous' if cnt > 2 else mode, 0.3)
+            dat = get_data_f(raw_true_pag, num_samples, var_levels, 'continuous' if cnt > 2 else mode, 0.4)
         except:# ro.rinterface_lib.embedded.RRuntimeError as e:
+            print('Failed to do mixed graph')
             continue
 
 
@@ -151,7 +152,7 @@ def test_ci(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
     label_intersect = sorted(list(label_intersect))
 
 
-    CNT_MAX = 40
+    CNT_MAX = 100
     cnt = 0
     cnt_split_attempt = 0
     while True:
@@ -169,10 +170,11 @@ def test_ci(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
             pl.col('S').str.split(',').list.eval(pl.element().replace(mapping)).list.sort().list.join(','),
         )
 
-        faithful_df = result_intersect_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
+        faithful_df = result_intersect_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='inner', coalesce=True)
         is_faithful3 = faithful_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(faithful_df)
 
         if not is_faithful3 and cnt < CNT_MAX:
+            cnt += 1
             print(f'retry - {cnt} - overlap not faithful')
             # cnt += 1 # no cnt++ when overlap already fails
             continue
@@ -201,7 +203,7 @@ def test_ci(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
 
             result_subset1_df = result_subset1_df.join(result_intersect_df, on=['ord', 'X', 'Y', 'S'], how='anti')
 
-            faithful_df = result_subset1_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
+            faithful_df = result_subset1_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='inner', coalesce=True)
             is_faithful1 = faithful_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(faithful_df)
 
             if not is_faithful1 and cnt < CNT_MAX:
@@ -535,7 +537,7 @@ def test_ci2(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
     return dfs1, dfs2, is_any_client_faithful, is_faithful1, is_faithful2, is_faithful3
 
 
-test_setups = [(pag, subset, i) for i,(pag,subset) in enumerate(zip(truePAGs, subsetsList),start=1)]
+test_setups = [(pag, subset, i) for i,(pag,subset) in enumerate(zip(truePAGs, subsetsList))]
 #test_setups = test_setups[:1]
 
 #test_setups = test_setups[:1]
@@ -633,6 +635,7 @@ split_options = [[0.25, 0.25, 0.25, 0.25]]#[0.1,0.5]
 # THREE TAIL PAGS
 #  [1]  2 16 18 19 20 23 29 31 37 42 44 53 57 58 62 64 66 69 70 72 73 74 75 79 81 82 83 84 93 98
 three_tail_pags = [2, 16, 18, 19, 20, 23, 29, 31, 37, 42, 44, 53, 57, 58, 62, 64, 66, 69, 70, 72, 73, 74, 75, 79, 81, 82, 83, 84, 93, 98]
+three_tail_pags = [t-1 for t in three_tail_pags]
 
 test_setups = [t for t in test_setups if t[2] in three_tail_pags]
 
