@@ -107,8 +107,6 @@ class Test():
 
     def get_llf(self, client_subset=None):
         if client_subset is not None:
-            print(client_subset)
-            print(self.iterations, self.llf)
             return sum([llf for client_id, llf in self.llf.items() if client_id in client_subset])
         return sum([llf for llf in self.llf.values()]) if self.llf is not None else 0
 
