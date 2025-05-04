@@ -107,6 +107,8 @@ class Test():
 
     def get_llf(self, client_subset=None):
         if client_subset is not None:
+            print(client_subset)
+            print(self.iterations, self.llf)
             return sum([llf for client_id, llf in self.llf.items() if client_id in client_subset])
         return sum([llf for llf in self.llf.values()]) if self.llf is not None else 0
 
@@ -499,15 +501,14 @@ class TestEnginePrecise(TestEngine):
             else:
                 raise Exception(f'Unknown variable type {schema[y_var]} encountered!')
 
+            base_potential_clients = [variable_availability[v] for v in [y_var]+list(cond_set)]
+            base_potential_clients = set.intersection(*base_potential_clients)
             for x_var in x_vars:
-                potential_clients = [variable_availability[v] for v in [y_var]+list(cond_set)]
-                #potential_clients_full_model = potential_clients + [variable_availability[x_var]]
-                potential_clients = set.intersection(*potential_clients)
-                #potential_clients_full_model = set.intersection(*potential_clients_full_model)
-                #print(f'{y_var} ~ {x_var}, {cond_set} -> {potential_clients}, {potential_clients_full_model}')
+                potential_clients = base_potential_clients & variable_availability[x_var]
+                if len(potential_clients) == 0:
+                    continue
 
                 full_cond_set = base_cond_set + expand_variable(x_var, category_expressions, ordinal_expressions)
-
                 required_labels = set([x_var] + [y_var] + list(cond_set))
 
                 self.required_test_pairs[(y_var, x_var, cond_set)] = (
@@ -532,6 +533,9 @@ class TestEnginePrecise(TestEngine):
         for (t0, t1) in self.required_test_pairs.values():
             self.tests.append(t0)
             self.tests.append(t1)
+
+        for t in self.tests:
+            print(t)
 
         self.tests: List[Test] = sorted(self.tests)
         self.current_test_index = 0
