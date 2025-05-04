@@ -534,9 +534,6 @@ class TestEnginePrecise(TestEngine):
             self.tests.append(t0)
             self.tests.append(t1)
 
-        for t in self.tests:
-            print(t)
-
         self.tests: List[Test] = sorted(self.tests)
         self.current_test_index = 0
 
