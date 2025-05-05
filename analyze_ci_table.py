@@ -43,10 +43,16 @@ for f in files:
 
 df = pl.concat(dfs)
 
+three_tail_pags = [2, 16, 18, 19, 20, 23, 29, 31, 37, 42, 44, 53, 57, 58, 62, 64, 66, 69, 70, 72, 73, 74, 75, 79, 81, 82, 83, 84, 93, 98]
+three_tail_pags = [t-1 for t in three_tail_pags]
+
 df = df.with_columns(
     faithfulness=pl.col('filename').str.split('-').list.get(-2),
-    num_samples=pl.col('filename').str.split('-').list.get(2).cast(pl.Int32)
+    num_samples=pl.col('filename').str.split('-').list.get(2).cast(pl.Int32),
+    pag_id=pl.col('filename').str.split('-').list.get(1).cast(pl.Int32)
 )
+
+print('Num unique pags used', df['pag_id'].n_unique())
 
 faithfulness_filter = None#'g'
 #faithfulness_filter = 'g'
@@ -54,7 +60,7 @@ faithfulness_filter = None#'g'
 #faithfulness_filter = 'gl'
 #faithfulness_filter = 'n'
 
-df = df.filter(pl.col('num_samples') == 10000)
+df = df.filter(pl.col('num_samples') == 8000)
 
 if faithfulness_filter is None:
     faithfulness_filter= 'all'

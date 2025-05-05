@@ -152,7 +152,7 @@ def test_ci(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
     label_intersect = sorted(list(label_intersect))
 
 
-    CNT_MAX = 100
+    CNT_MAX = 1000
     cnt = 0
     cnt_split_attempt = 0
     while True:
@@ -624,7 +624,7 @@ def generate_dataset(setup):
 #pl.Config.set_tbl_rows(20)
 
 #num_client_options = [4]
-num_samples_options = [8_000] #, 50_000, 100_000]
+num_samples_options = [4_000] #, 50_000, 100_000]
 split_options = [[0.25, 0.25, 0.25, 0.25]]#[0.1,0.5]
 
 
