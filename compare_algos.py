@@ -176,8 +176,8 @@ def setup_server(client_data):
 
     return server
 
-def server_results_to_dataframe(labels, results):
-    likelihood_ratio_tests = fedci.get_symmetric_likelihood_tests(results)
+def server_results_to_dataframe(server, labels, results):
+    likelihood_ratio_tests = server.get_likelihood_ratio_tests()
 
     columns = ('ord', 'X', 'Y', 'S', 'pvalue')
     rows = []
@@ -443,7 +443,7 @@ ALPHA = 0.05
 # 500,1000,5000,10000 with 2,4 clients 10 times
 
 #test_setups = test_setups[5:10]
-data_dir = './experiments/simulation/result3a'
+data_dir = './experiments/simulation/results5a'
 data_file_pattern = '{}-{}.ndjson'
 
 faithful_path = './experiments/datasets/f2/'
@@ -454,7 +454,7 @@ unfaithful_path = './experiments/datasets/uf2/'
 def run_comparison(setup):
     data_id, (subset1_files, subset2_files) = setup
 
-    target_file = 'experiments/simulation/results3/' + data_id + '-result.parquet'
+    target_file = 'experiments/simulation/results5/' + data_id + '-result.parquet'
 
     if os.path.exists(target_file):
         return
@@ -493,7 +493,7 @@ def run_comparison(setup):
     results_fedci = server.run()
     all_labels_fedci = sorted(list(server.schema.keys()))
     client_labels = {id: sorted(list(schema.keys())) for id, schema in server.client_schemas.items()}
-    df_fedci = server_results_to_dataframe(all_labels_fedci, results_fedci)
+    df_fedci = server_results_to_dataframe(server, all_labels_fedci, results_fedci)
 
     _df_fedci = pl.from_pandas(df_fedci)
 
@@ -531,7 +531,7 @@ def run_comparison(setup):
         server = fedci.Server({'1': fedci.Client(client_data)})
         results = server.run()
         client_labels = sorted(client_data.columns)
-        df = server_results_to_dataframe(client_labels, results)
+        df = server_results_to_dataframe(server, client_labels, results)
         return df, client_labels
 
 
@@ -656,7 +656,7 @@ import os
 
 pag_lookup = {i: pag for i, pag in enumerate(truePAGs)}
 
-dataset_dir = 'experiments/datasets/data3'
+dataset_dir = 'experiments/datasets/data5'
 dataset_files = os.listdir(dataset_dir)
 dataset_files_subset = {}
 for f in dataset_files:
@@ -673,7 +673,7 @@ for f in dataset_files:
     dataset_files_subset[id][idx].append(dataset_dir+'/'+f)
 
 
-configurations = [(id, client_files) for id, client_files in dataset_files_subset.items() if '50000' in id]# and '-g' == id[-2:]]
+configurations = [(id, client_files) for id, client_files in dataset_files_subset.items() if '10000' in id and '-g' == id[-2:]]
 
 from tqdm.contrib.concurrent import process_map
 

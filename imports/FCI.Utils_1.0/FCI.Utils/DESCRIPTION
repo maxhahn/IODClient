@@ -1,0 +1,16 @@
+Package: FCI.Utils
+Type: Package
+Title: FCI.Utils: FCI Helper Functions
+Version: 1.0
+Author: Adèle Helena Ribeiro <adele.helena@gmail.com>
+Maintainer: Adèle Helena Ribeiro <adele.helena@gmail.com>
+Description: Includes a variety of functions to help run the FCI algorithm. 
+License: GPL (>= 2)
+Encoding: UTF-8
+Imports: MASS, MXM, nnet, pscl, ggm, dagitty, pcalg, igraph, stats,
+        DOT, lmtest, rsvg, jsonlite, doFuture, BFF, foreach,
+        future.apply, matrixcalc
+Suggests: MicrobiomeStat, GUniFrac
+RoxygenNote: 7.3.2
+NeedsCompilation: no
+Packaged: 2025-01-17 12:36:42 UTC; adele

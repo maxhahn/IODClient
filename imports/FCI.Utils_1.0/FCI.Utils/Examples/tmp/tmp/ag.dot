@@ -1,0 +1,13 @@
+digraph graphname {node [shape = oval];
+A_1 [label= A_1 ]
+B_2 [label= B_2 ]
+C_3 [label= C_3 ]
+D_4 [label= D_4 ]
+E_5 [label= E_5 ]
+A_1 -> B_2 [color=black, dir=both,arrowhead=normal, arrowtail=odot];
+B_2 -> C_3 [color=black, dir=both,arrowhead=normal, arrowtail=normal];
+B_2 -> D_4 [color=black, dir=both,arrowhead=normal, arrowtail=none];
+B_2 -> E_5 [color=black, dir=both,arrowhead=normal, arrowtail=none];
+C_3 -> D_4 [color=black, dir=both,arrowhead=normal, arrowtail=none];
+C_3 -> E_5 [color=black, dir=both,arrowhead=normal, arrowtail=normal];
+}

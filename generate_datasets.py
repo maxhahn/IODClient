@@ -69,7 +69,7 @@ def get_dataframe_from_r(test_setup, num_samples, mode='mixed'):
         cnt += 1
         # get data from R function
         try:
-            dat = get_data_f(raw_true_pag, num_samples, var_levels, 'continuous' if cnt > 2 else mode, 0.4)
+            dat = get_data_f(raw_true_pag, num_samples, var_levels, 'continuous' if cnt > 2 else mode, 0.2)
         except:# ro.rinterface_lib.embedded.RRuntimeError as e:
             print('Failed to do mixed graph')
             continue
@@ -541,7 +541,7 @@ test_setups = [(pag, subset, i) for i,(pag,subset) in enumerate(zip(truePAGs, su
 #test_setups = test_setups[:1]
 
 #test_setups = test_setups[:1]
-NUM_TESTS = 1
+NUM_TESTS = 4
 # ls -la experiments/datasets/*/*-100000-faith.parquet | wc -l
 ALPHA = 0.05
 
@@ -624,7 +624,7 @@ def generate_dataset(setup):
 #pl.Config.set_tbl_rows(20)
 
 #num_client_options = [4]
-num_samples_options = [20_000] #, 50_000, 100_000]
+num_samples_options = [8_000] #, 50_000, 100_000]
 split_options = [[0.25, 0.25, 0.25, 0.25]]#[0.1,0.5]
 
 

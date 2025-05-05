@@ -231,7 +231,7 @@ num_samples = [
 ]
 num_clients = [
     #1, 3, 5,
-    7
+    2
 ]
 
 file_info = ('./experiments/fed-v-fisher/', 'tests.ndjson')

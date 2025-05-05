@@ -3,7 +3,7 @@ import polars.selectors as cs
 
 import os
 
-dir = 'experiments/simulation/results3/'
+dir = 'experiments/simulation/results5/'
 
 #all_faithful_ids = [f.rpartition('-')[0] for f in os.listdir('experiments/datasets/f2')]
 #all_unfaithful_ids = [f.rpartition('-')[0] for f in os.listdir('experiments/datasets/uf2')]
@@ -43,7 +43,10 @@ for f in files:
 
 df = pl.concat(dfs)
 
-df = df.with_columns(faithfulness=pl.col('filename').str.split('-').list.get(-2))
+df = df.with_columns(
+    faithfulness=pl.col('filename').str.split('-').list.get(-2),
+    num_samples=pl.col('filename').str.split('-').list.get(2).cast(pl.Int32)
+)
 
 faithfulness_filter = None#'g'
 #faithfulness_filter = 'g'
@@ -51,6 +54,7 @@ faithfulness_filter = None#'g'
 #faithfulness_filter = 'gl'
 #faithfulness_filter = 'n'
 
+df = df.filter(pl.col('num_samples') == 10000)
 
 if faithfulness_filter is None:
     faithfulness_filter= 'all'
@@ -390,7 +394,7 @@ if faithfulness_filter == 'all':
         #rot=30
     )
     _render =  hv.render(plot, backend='matplotlib')
-    _render.savefig(f'images/ci_accuracy/bar-dep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+    _render.savefig(f'images/ci_accuracy/bar-indep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
     __df = _df.filter(~pl.col('MSep'))
     plot = __df.sort('faithfulness').hvplot.bar(
@@ -400,4 +404,4 @@ if faithfulness_filter == 'all':
         #rot=30
     )
     _render =  hv.render(plot, backend='matplotlib')
-    _render.savefig(f'images/ci_accuracy/bar-indep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+    _render.savefig(f'images/ci_accuracy/bar-dep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)

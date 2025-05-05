@@ -11,11 +11,11 @@ json_file = "experiments/simulation/iod_comparison_final/*.ndjson"
 #json_file = "experiments/simulation/iod_comparison_inbalance/*.ndjson"
 #json_file = "experiments/simulation/iod_comparison_find_correct/*.ndjson"
 #json_file = "experiments/simulation/iod_comparison_inbalance2/*.ndjson"
-json_file = "experiments/simulation/result3a/*-g-*.ndjson"
+json_file = "experiments/simulation/results5a/*-g-*.ndjson"
 
-metric = 'MIN_SHD'
+#metric = 'MIN_SHD'
 #metric = 'MIN_FDR'
-#metric = 'MIN_FDR'
+metric = 'MIN_FDR'
 
 schema = pl.read_ndjson("experiments/simulation/iod_comparison_final/*.ndjson").schema
 df = pl.read_ndjson(json_file, schema=schema)
