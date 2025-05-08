@@ -43,7 +43,6 @@ get_datax <- function(true_pag_amat, num_samples, variable_levels, mode, coef_th
 }
 
 get_data <- function(true_pag_amat, num_samples, variable_levels, mode, coef_thresh) {
-  set.seed(42)  # For reproducibility
 
   var_levels  <- list()
   cols <- colnames(true_pag_amat)

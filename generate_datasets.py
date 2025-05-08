@@ -255,84 +255,8 @@ def test_ci(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
 
         return dfs1, dfs2, None, is_faithful1, is_faithful2, is_faithful3
 
-        for _ in range(3):
-            faithful_partition_cnt = 0
 
-            dfs1 = []
-            split_acc = 0
-            _df1 = df1.sample(fraction=1, shuffle=True)
-            for split_perc in perc_split[0::2]:
-                cutoff_from = int(split_acc * len(_df1) / subset1_frac)
-                cutoff_to = int((split_acc+split_perc) * len(_df1) / subset1_frac)
-                split_acc += split_perc
-                _df = _df1[cutoff_from:cutoff_to]
 
-                # CI Test
-                result_df, result_labels = mxm_ci_test(_df)
-                result_df = pl.from_pandas(result_df)
-                result_df = result_df.with_columns(indep=pl.col('pvalue')>ALPHA).drop('pvalue')
-
-                # Reformat
-                mapping = {str(i):l for i,l in enumerate(result_labels, start=1)}
-                result_df = result_df.with_columns(
-                    pl.col('X').cast(pl.Utf8).replace(mapping),
-                    pl.col('Y').cast(pl.Utf8).replace(mapping),
-                    pl.col('S').str.split(',').list.eval(pl.element().replace(mapping)).list.sort().list.join(','),
-                )
-
-                # test faithfulness
-                faithful_df = result_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
-                is_faithful = faithful_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(faithful_df)
-
-                if is_faithful:
-                    faithful_partition_cnt += 1
-                dfs1.append(_df)
-
-            if faithful_partition_cnt > 0 and cnt < CNT_MAX:
-                print(f'retry - {cnt} - partition was faithful in subset 1')
-                continue
-
-            dfs2 = []
-            split_acc = 0
-            _df2 = df2.sample(fraction=1, shuffle=True)
-            for split_perc in perc_split[1::2]:
-                cutoff_from = int(split_acc * len(_df2) / (1-subset1_frac))
-                cutoff_to = int((split_acc+split_perc) * len(_df2) / (1-subset1_frac))
-                split_acc += split_perc
-                _df = _df2[cutoff_from:cutoff_to]
-
-                # CI Test
-                result_df, result_labels = mxm_ci_test(_df)
-                result_df = pl.from_pandas(result_df)
-                result_df = result_df.with_columns(indep=pl.col('pvalue')>ALPHA).drop('pvalue')
-
-                # Reformat
-                mapping = {str(i):l for i,l in enumerate(result_labels, start=1)}
-                result_df = result_df.with_columns(
-                    pl.col('X').cast(pl.Utf8).replace(mapping),
-                    pl.col('Y').cast(pl.Utf8).replace(mapping),
-                    pl.col('S').str.split(',').list.eval(pl.element().replace(mapping)).list.sort().list.join(','),
-                )
-
-                # test faithfulness
-                faithful_df = result_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
-                is_faithful = faithful_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(faithful_df)
-
-                if is_faithful:
-                    faithful_partition_cnt += 1
-                dfs2.append(_df)
-
-            if faithful_partition_cnt > 0 and cnt < CNT_MAX:
-                continue
-
-            break
-
-        if faithful_partition_cnt > 0 and cnt < CNT_MAX:
-            print(f'retry - {cnt} - had at least one faithful partition')
-            cnt += 1
-            continue
-        break
-    return dfs1, dfs2, faithful_partition_cnt > 0, is_faithful1, is_faithful2, is_faithful3
 
 def test_ci2(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
     all_labels = set(sorted(list(set(test_setup[1][0] + test_setup[1][1]))))
@@ -624,7 +548,7 @@ def generate_dataset(setup):
 #pl.Config.set_tbl_rows(20)
 
 #num_client_options = [4]
-num_samples_options = [2_000] #, 50_000, 100_000]
+num_samples_options = [4_000] #, 50_000, 100_000]
 #split_options = [[0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125]]#[0.1,0.5]
 split_options = [[0.2, 0.2, 0.2, 0.2, 0.1, 0.1]]#[0.1,0.5]
 
