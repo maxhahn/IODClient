@@ -152,7 +152,7 @@ def test_ci(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
     label_intersect = sorted(list(label_intersect))
 
 
-    CNT_MAX = 0#1000
+    CNT_MAX = 1000
     cnt = 0
     cnt_split_attempt = 0
     while True:
@@ -246,6 +246,7 @@ def test_ci(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
             split_acc += split_perc
             _df = df1[cutoff_from:cutoff_to]
             dfs1.append(_df)
+
         dfs2 = []
         split_acc = 0
         split_percs = perc_split[1::2]
