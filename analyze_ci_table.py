@@ -60,7 +60,7 @@ faithfulness_filter = None#'g'
 #faithfulness_filter = 'gl'
 #faithfulness_filter = 'n'
 
-df = df.filter(pl.col('num_samples') == 8000)
+df = df.filter(pl.col('num_samples') == 4000)
 
 if faithfulness_filter is None:
     faithfulness_filter= 'all'

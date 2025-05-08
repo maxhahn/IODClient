@@ -609,7 +609,7 @@ def generate_dataset(setup):
 
     now = int(datetime.datetime.utcnow().timestamp()*1e3)
 
-    ds_file_pattern = './experiments/datasets/data5/{}-{}-{}-{}-{}-{}.parquet'
+    ds_file_pattern = './experiments/datasets/data6/{}-{}-{}-{}-{}-{}.parquet'
 
 
     for i,df1 in enumerate(dfs1):
@@ -624,8 +624,9 @@ def generate_dataset(setup):
 #pl.Config.set_tbl_rows(20)
 
 #num_client_options = [4]
-num_samples_options = [4_000] #, 50_000, 100_000]
-split_options = [[0.25, 0.25, 0.25, 0.25]]#[0.1,0.5]
+num_samples_options = [2_000] #, 50_000, 100_000]
+#split_options = [[0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125]]#[0.1,0.5]
+split_options = [[0.2, 0.2, 0.2, 0.2, 0.1, 0.1]]#[0.1,0.5]
 
 
 # 10_000 globally -> does it give faithfulness?
