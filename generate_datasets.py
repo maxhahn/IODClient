@@ -152,7 +152,7 @@ def test_ci(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
     label_intersect = sorted(list(label_intersect))
 
 
-    CNT_MAX = 1000
+    CNT_MAX = 0#1000
     cnt = 0
     cnt_split_attempt = 0
     while True:
@@ -180,7 +180,7 @@ def test_ci(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
             continue
 
         # test subset1 and subset2
-        subset1_frac = sum(perc_split[::2])
+        subset1_frac = sum(perc_split[::2])/sum(perc_split)
 
         cutoff = int(subset1_frac*len(df))
         is_faithful1 = True
@@ -238,17 +238,21 @@ def test_ci(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
 
         dfs1 = []
         split_acc = 0
-        for split_perc in perc_split[0::2]:
-            cutoff_from = int(split_acc * len(df1) / subset1_frac)
-            cutoff_to = int((split_acc+split_perc) * len(df1) / subset1_frac)
+        split_percs = perc_split[0::2]
+        split_percs = [s/sum(split_percs) for s in split_percs]
+        for split_perc in split_percs:#perc_split[0::2]:
+            cutoff_from = int(split_acc * len(df1))
+            cutoff_to = int((split_acc+split_perc) * len(df1))
             split_acc += split_perc
             _df = df1[cutoff_from:cutoff_to]
             dfs1.append(_df)
         dfs2 = []
         split_acc = 0
-        for split_perc in perc_split[1::2]:
-            cutoff_from = int(split_acc * len(df2) / (1-subset1_frac))
-            cutoff_to = int((split_acc+split_perc) * len(df2) / (1-subset1_frac))
+        split_percs = perc_split[1::2]
+        split_percs = [s/sum(split_percs) for s in split_percs]
+        for split_perc in split_percs:#perc_split[1::2]:
+            cutoff_from = int(split_acc * len(df2))
+            cutoff_to = int((split_acc+split_perc) * len(df2))
             split_acc += split_perc
             _df = df2[cutoff_from:cutoff_to]
             dfs2.append(_df)
@@ -537,9 +541,11 @@ def generate_dataset(setup):
 
 
     for i,df1 in enumerate(dfs1):
-        df1.write_parquet(ds_file_pattern.format(now, test_setup[2], num_samples, max(perc_split), faith_id, f'd1_{i}'))
+        _split_perc = f'{len(df1)/num_samples:.2f}'
+        df1.write_parquet(ds_file_pattern.format(now, test_setup[2], num_samples, _split_perc, faith_id, f'd1_{i}'))
     for i,df2 in enumerate(dfs2):
-        df2.write_parquet(ds_file_pattern.format(now, test_setup[2], num_samples, max(perc_split), faith_id, f'd2_{i}'))
+        _split_perc = f'{len(df2)/num_samples:.2f}'
+        df2.write_parquet(ds_file_pattern.format(now, test_setup[2], num_samples, _split_perc, faith_id, f'd2_{i}'))
 
     # GET M SEPARABILITY
     #df = is_m_separable(test_setup)
@@ -550,7 +556,7 @@ def generate_dataset(setup):
 #num_client_options = [4]
 num_samples_options = [4_000] #, 50_000, 100_000]
 #split_options = [[0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125]]#[0.1,0.5]
-split_options = [[0.2, 0.2, 0.2, 0.2, 0.1, 0.1]]#[0.1,0.5]
+split_options = [[1,1,1,1,1,1]]#[0.1,0.5]
 
 
 # 10_000 globally -> does it give faithfulness?
