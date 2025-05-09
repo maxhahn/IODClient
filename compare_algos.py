@@ -443,7 +443,7 @@ ALPHA = 0.05
 # 500,1000,5000,10000 with 2,4 clients 10 times
 
 #test_setups = test_setups[5:10]
-data_dir = './experiments/simulation/results5a'
+data_dir = './experiments/simulation/results6a'
 data_file_pattern = '{}-{}.ndjson'
 
 faithful_path = './experiments/datasets/f2/'
@@ -454,7 +454,7 @@ unfaithful_path = './experiments/datasets/uf2/'
 def run_comparison(setup):
     data_id, (subset1_files, subset2_files) = setup
 
-    target_file = 'experiments/simulation/results5/' + data_id + '-result.parquet'
+    target_file = 'experiments/simulation/results6/' + data_id + '-result.parquet'
 
     if os.path.exists(target_file):
         return
@@ -600,7 +600,7 @@ def run_comparison(setup):
     fisher_df = fisher_df.group_by(['ord', 'X', 'Y', 'S']).agg(pl.col('pvalue'))
 
     fisher_df = fisher_df.with_columns(
-        DOFs=pl.col('pvalue').list.len(),
+        DOFs=2*pl.col('pvalue').list.len(),
         T=-2*(pl.col('pvalue').list.eval(pl.element().log()).list.sum())
     )
 
@@ -656,7 +656,7 @@ import os
 
 pag_lookup = {i: pag for i, pag in enumerate(truePAGs)}
 
-dataset_dir = 'experiments/datasets/data5'
+dataset_dir = 'experiments/datasets/data6'
 dataset_files = os.listdir(dataset_dir)
 dataset_files_subset = {}
 for f in dataset_files:
@@ -673,7 +673,7 @@ for f in dataset_files:
     dataset_files_subset[id][idx].append(dataset_dir+'/'+f)
 
 
-configurations = [(id, client_files) for id, client_files in dataset_files_subset.items() if '-4000-' in id and '-g' == id[-2:]]
+configurations = [(id, client_files) for id, client_files in dataset_files_subset.items() if '-4000-' in id and '-g' == id[-2:]]#and '780-' in id and '-22-' in id ]
 
 from tqdm.contrib.concurrent import process_map
 
