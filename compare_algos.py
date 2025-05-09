@@ -442,8 +442,10 @@ ALPHA = 0.05
 # TODO: run the tests done so far for fedci with colliders with order IOD
 # 500,1000,5000,10000 with 2,4 clients 10 times
 
+DATA_DIR = 'experiments/simulation/results7'
+
 #test_setups = test_setups[5:10]
-data_dir = './experiments/simulation/results6a'
+data_dir = f'{DATA_DIR}a'
 data_file_pattern = '{}-{}.ndjson'
 
 faithful_path = './experiments/datasets/f2/'
@@ -452,27 +454,48 @@ unfaithful_path = './experiments/datasets/uf2/'
 
 
 def run_comparison(setup):
-    data_id, (subset1_files, subset2_files) = setup
+    data_id, (df1_file, df2_file), perc_split = setup
 
-    target_file = 'experiments/simulation/results6/' + data_id + '-result.parquet'
+    perc_split_str = str(perc_split).replace(' ', '').replace(',', '_').replace('[','(').replace(']',')')
+
+    target_file = f'{DATA_DIR}/{data_id}-{perc_split_str}-result.parquet'
 
     if os.path.exists(target_file):
         return
-    if len(subset1_files) != 2 or len(subset2_files) != 2:
-        print('Bad number of files for', subset1_files, subset2_files)
-        return
+
+
+    df1 = pl.read_parquet(df1_file)
+    df2 = pl.read_parquet(df2_file)
 
     dfs1 = []
     dfs2 = []
 
-    for subset1_file in subset1_files:
-        dfs1.append(pl.read_parquet(subset1_file))
-    for subset2_file in subset2_files:
-        dfs2.append(pl.read_parquet(subset2_file))
+    ### SPLIT DATA
+
+    dfs1 = []
+    split_acc = 0
+    split_percs = perc_split[0::2]
+    split_percs = [s/sum(split_percs) for s in split_percs]
+    for split_perc in split_percs:
+        cutoff_from = int(split_acc * len(df1))
+        cutoff_to = int((split_acc+split_perc) * len(df1))
+        split_acc += split_perc
+        _df = df1[cutoff_from:cutoff_to]
+        dfs1.append(_df)
+
+    dfs2 = []
+    split_acc = 0
+    split_percs = perc_split[1::2]
+    split_percs = [s/sum(split_percs) for s in split_percs]
+    for split_perc in split_percs:
+        cutoff_from = int(split_acc * len(df2))
+        cutoff_to = int((split_acc+split_perc) * len(df2))
+        split_acc += split_perc
+        _df = df2[cutoff_from:cutoff_to]
+        dfs2.append(_df)
 
     pag_id = int(data_id.split('-')[1])
     num_samples = int(data_id.split('-')[2])
-    split_perc = float(data_id.split('-')[3])
     true_pag = pag_lookup[pag_id]
 
     df_faith = pl.read_parquet(f'experiments/pag_msep/pag-{pag_id}.parquet')
@@ -622,7 +645,6 @@ def run_comparison(setup):
         indep_pooled=pl.col('pvalue_pooled') > ALPHA
     )#.drop('pvalue_fisher', 'pvalue_fedci')
 
-
     df_faith.write_parquet(target_file)
 
     metrics_fisher_ot = run_pval_agg_iod(
@@ -649,31 +671,25 @@ def run_comparison(setup):
 
     #print(found_correct_pag_fedci, found_correct_pag_pvalagg)
 
-    log_results(data_dir, data_file, metrics_fedci, metrics_fedci_ot, metrics_fisher, metrics_fisher_ot, ALPHA, num_samples, 2, [split_perc,1-split_perc], pag_id)
+    log_results(data_dir, data_file, metrics_fedci, metrics_fedci_ot, metrics_fisher, metrics_fisher_ot, ALPHA, num_samples, len(perc_split), perc_split, pag_id)
 
 
 import os
 
 pag_lookup = {i: pag for i, pag in enumerate(truePAGs)}
 
-dataset_dir = 'experiments/datasets/data6'
+dataset_dir = 'experiments/datasets/data7'
 dataset_files = os.listdir(dataset_dir)
 dataset_files_subset = {}
 for f in dataset_files:
     id = f.rpartition('-')[0]
-    if 'd1_' in f:
-        idx = 0
-    elif 'd2_' in f:
-        idx = 1
-    else:
-        assert False, 'Bad file encountered'
+    dataset_files_subset[id] = (f'{dataset_dir}/{id}-p1.parquet', f'{dataset_dir}/{id}-p2.parquet')
 
-    if id not in dataset_files_subset:
-        dataset_files_subset[id] = [[], []]
-    dataset_files_subset[id][idx].append(dataset_dir+'/'+f)
+perc_split = [4,4,1,1]
+#perc_split = [1,1,1,1,1,1]
+#perc_split = [1,1]
 
-
-configurations = [(id, client_files) for id, client_files in dataset_files_subset.items() if '-4000-' in id and '-g' == id[-2:]]#and '780-' in id and '-22-' in id ]
+configurations = [(id, client_files, perc_split) for id, client_files in dataset_files_subset.items() if '-4000-' in id and '-g' == id[-2:]]#and '780-' in id and '-22-' in id ]
 
 from tqdm.contrib.concurrent import process_map
 

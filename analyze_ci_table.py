@@ -3,28 +3,29 @@ import polars.selectors as cs
 
 import os
 
-dir = 'experiments/simulation/results6/'
+dir = 'experiments/simulation/results7'
 
 #all_faithful_ids = [f.rpartition('-')[0] for f in os.listdir('experiments/datasets/f2')]
 #all_unfaithful_ids = [f.rpartition('-')[0] for f in os.listdir('experiments/datasets/uf2')]
 
 files = os.listdir(dir)
 
-files_by_type = {}
-for f in files:
-    faithfulness_type = f.split('-')[-2]
-    if faithfulness_type not in files_by_type:
-        files_by_type[faithfulness_type] = []
-    files_by_type[faithfulness_type].append(dir+f)
+# files_by_type = {}
+# for f in files:
+#     print(f)
+#     faithfulness_type = f.split('-')[-2]
+#     if faithfulness_type not in files_by_type:
+#         files_by_type[faithfulness_type] = []
+#     files_by_type[faithfulness_type].append(dir+f)
 #files_faithful = [dir+f for f in files if '-g-' in f]
 #files_unfaithful = [dir+f for f in files if '-g-' not in f]
 
 #print(len(files_faithful), len(files_unfaithful))
 
-dfs = []
-for t,f in files_by_type.items():
-    df = pl.read_parquet(f).with_columns(faithfulness=pl.lit(t), filename=pl.lit(f))
-    dfs.append(df)
+# dfs = []
+# for t,f in files_by_type.items():
+#     df = pl.read_parquet(f).with_columns(faithfulness=pl.lit(t), filename=pl.lit(f))
+#     dfs.append(df)
 
 dfs = []
 for f in files:
@@ -47,10 +48,12 @@ three_tail_pags = [2, 16, 18, 19, 20, 23, 29, 31, 37, 42, 44, 53, 57, 58, 62, 64
 three_tail_pags = [t-1 for t in three_tail_pags]
 
 df = df.with_columns(
-    faithfulness=pl.col('filename').str.split('-').list.get(-2),
+    faithfulness=pl.col('filename').str.split('-').list.get(-3),
     num_samples=pl.col('filename').str.split('-').list.get(2).cast(pl.Int32),
+    split_sizes=pl.col('filename').str.split('(').list.get(1).str.split(')').list.get(0).str.split('_'),
     pag_id=pl.col('filename').str.split('-').list.get(1).cast(pl.Int32)
 )
+df = df.with_columns(num_splits=pl.col('split_sizes').list.len())
 
 print('Num unique pags used', df['pag_id'].n_unique())
 
@@ -61,6 +64,9 @@ faithfulness_filter = None#'g'
 #faithfulness_filter = 'n'
 
 df = df.filter(pl.col('num_samples') == 4000)
+
+#df = df.filter(pl.col('num_splits') == 6)
+#df = df.filter(pl.col('split_sizes').list.max() == 1)
 
 if faithfulness_filter is None:
     faithfulness_filter= 'all'
@@ -104,7 +110,7 @@ print(__df.select('MSep','filename'))
 
 print(df.select(cs.starts_with('correct_')).mean())
 print(df.group_by('faithfulness').agg(cs.starts_with('correct_').mean()).with_columns(diff=pl.col('correct_fedci')-pl.col('correct_fisher')).sort('faithfulness'))
-print(df.group_by('faithfulness', 'MSep').agg(cs.starts_with('correct_').mean(), pl.len()).sort('faithfulness', 'MSep'))
+print(df.group_by('num_splits', 'MSep').agg(cs.starts_with('correct_').mean(), pl.len()).sort('num_splits', 'MSep'))
 #print(df.group_by('ord', 'X', 'Y', 'S').agg(pl.col('MSep').first(), cs.starts_with('correct_').sum(), pl.len()).sort('ord', 'X', 'Y', 'S'))
 #print(df.group_by('ord', 'X', 'Y', 'S').agg(pl.col('MSep').first(), cs.starts_with('correct_').sum() / pl.len(), pl.len()).sort('ord', 'X', 'Y', 'S'))
 
@@ -289,7 +295,7 @@ def get_correlation(df, identifiers, colx, coly):
 
 #identifiers = ['ord', 'X', 'Y', 'S']
 identifiers = []
-identifiers = ['faithfulness', 'MSep']
+identifiers = ['num_splits', 'MSep']
 
 df_fed = get_correlation(df, identifiers, 'pvalue_fedci', 'pvalue_pooled').rename({'p_value_correlation': 'Federated'})
 df_fisher = get_correlation(df, identifiers, 'pvalue_fisher', 'pvalue_pooled').rename({'p_value_correlation': 'Meta-Analysis'})
@@ -318,9 +324,9 @@ print('=== Now plotting boxplots of pvalue difference to pooled baseline')
 _df = df
 
 # p-value approx = 0 appears to be way too easy. Make sure pvalues on pooled data are at least slightly away from 0 for plot
-l1 = len(_df)
-_df = _df.filter(pl.col('pvalue_pooled') > 1e-8)
-print(f'All data: Removed {100-(len(_df)/l1)*100:.3f}% ({l1-len(_df)} samples) of data because of proximity to 0')
+#l1 = len(_df)
+#_df = _df.filter(pl.col('pvalue_pooled') > 1e-8)
+#print(f'All data: Removed {100-(len(_df)/l1)*100:.3f}% ({l1-len(_df)} samples) of data because of proximity to 0')
 
 _df = _df.rename({
     'pvalue_diff_fedci_pooled': 'Federated',
@@ -352,9 +358,9 @@ _df = df.filter(~pl.col('MSep'))
 #_df = _df.filter((pl.col('pvalue_diff_fedci_pooled') != 0) & (pl.col('pvalue_diff_fisher_pooled') != 0))
 
 # p-value approx = 0 appears to be way too easy. Make sure pvalues on pooled data are at least slightly away from 0 for plot
-l1 = len(_df)
-_df = _df.filter(pl.col('pvalue_pooled') > 1e-8)
-print(f'Not MSep plot: Removed {100-(len(_df)/l1)*100:.3f}% ({l1-len(_df)} samples) of data because of proximity to 0')
+#l1 = len(_df)
+#_df = _df.filter(pl.col('pvalue_pooled') > 1e-8)
+#print(f'Not MSep plot: Removed {100-(len(_df)/l1)*100:.3f}% ({l1-len(_df)} samples) of data because of proximity to 0')
 
 _df = _df.rename({
     'pvalue_diff_fedci_pooled': 'Federated',
@@ -416,7 +422,7 @@ alpha = 0.05
 
 #identifiers = ['ord', 'X', 'Y', 'S']
 identifiers = []
-identifiers = ['faithfulness', 'MSep']
+identifiers = ['num_splits', 'MSep']
 
 
 df_fed = get_accuracy(df, identifiers, 'pvalue_fedci', 'pvalue_pooled', alpha).rename({'accuracy': 'Federated'})
@@ -434,36 +440,36 @@ print('Showing % of decision agreements')
 print(_df.with_columns(diff=pl.col('Federated')- pl.col('Meta-Analysis')).sort('diff'))
 
 
-if faithfulness_filter == 'all':
+# if faithfulness_filter == 'all':
 
-    _df = _df.rename({
-      'Federated': 'F',
-      'Meta-Analysis': 'MA'
-    })
+#     _df = _df.rename({
+#       'Federated': 'F',
+#       'Meta-Analysis': 'MA'
+#     })
 
-    _df = _df.with_columns(pl.col('faithfulness').replace_strict({
-        'g': 'global only',
-        'gl': 'faithful',
-        'l': 'local only',
-        'n': 'unfaithful'
-    }))
+#     _df = _df.with_columns(pl.col('faithfulness').replace_strict({
+#         'g': 'global only',
+#         'gl': 'faithful',
+#         'l': 'local only',
+#         'n': 'unfaithful'
+#     }))
 
-    __df = _df.filter(pl.col('MSep'))
-    plot = __df.sort('faithfulness').hvplot.bar(
-        x='faithfulness',
-        y=['F', 'MA'],
-        xlabel='Performance Of Method Under Different Faithfulness Conditions',
-        #rot=30
-    )
-    _render =  hv.render(plot, backend='matplotlib')
-    _render.savefig(f'images/ci_accuracy/bar-indep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+#     __df = _df.filter(pl.col('MSep'))
+#     plot = __df.sort('faithfulness').hvplot.bar(
+#         x='faithfulness',
+#         y=['F', 'MA'],
+#         xlabel='Performance Of Method Under Different Faithfulness Conditions',
+#         #rot=30
+#     )
+#     _render =  hv.render(plot, backend='matplotlib')
+#     _render.savefig(f'images/ci_accuracy/bar-indep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
-    __df = _df.filter(~pl.col('MSep'))
-    plot = __df.sort('faithfulness').hvplot.bar(
-        x='faithfulness',
-        y=['F', 'MA'],
-        xlabel='Performance Of Method Under Different Faithfulness Conditions',
-        #rot=30
-    )
-    _render =  hv.render(plot, backend='matplotlib')
-    _render.savefig(f'images/ci_accuracy/bar-dep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+#     __df = _df.filter(~pl.col('MSep'))
+#     plot = __df.sort('faithfulness').hvplot.bar(
+#         x='faithfulness',
+#         y=['F', 'MA'],
+#         xlabel='Performance Of Method Under Different Faithfulness Conditions',
+#         #rot=30
+#     )
+#     _render =  hv.render(plot, backend='matplotlib')
+#     _render.savefig(f'images/ci_accuracy/bar-dep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)

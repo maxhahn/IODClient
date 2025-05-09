@@ -236,29 +236,29 @@ def test_ci(df_msep, num_samples, test_setup, perc_split, alpha = 0.05):
             cnt += 1
             continue
 
-        dfs1 = []
-        split_acc = 0
-        split_percs = perc_split[0::2]
-        split_percs = [s/sum(split_percs) for s in split_percs]
-        for split_perc in split_percs:#perc_split[0::2]:
-            cutoff_from = int(split_acc * len(df1))
-            cutoff_to = int((split_acc+split_perc) * len(df1))
-            split_acc += split_perc
-            _df = df1[cutoff_from:cutoff_to]
-            dfs1.append(_df)
+        # dfs1 = []
+        # split_acc = 0
+        # split_percs = perc_split[0::2]
+        # split_percs = [s/sum(split_percs) for s in split_percs]
+        # for split_perc in split_percs:#perc_split[0::2]:
+        #     cutoff_from = int(split_acc * len(df1))
+        #     cutoff_to = int((split_acc+split_perc) * len(df1))
+        #     split_acc += split_perc
+        #     _df = df1[cutoff_from:cutoff_to]
+        #     dfs1.append(_df)
 
-        dfs2 = []
-        split_acc = 0
-        split_percs = perc_split[1::2]
-        split_percs = [s/sum(split_percs) for s in split_percs]
-        for split_perc in split_percs:#perc_split[1::2]:
-            cutoff_from = int(split_acc * len(df2))
-            cutoff_to = int((split_acc+split_perc) * len(df2))
-            split_acc += split_perc
-            _df = df2[cutoff_from:cutoff_to]
-            dfs2.append(_df)
+        # dfs2 = []
+        # split_acc = 0
+        # split_percs = perc_split[1::2]
+        # split_percs = [s/sum(split_percs) for s in split_percs]
+        # for split_perc in split_percs:#perc_split[1::2]:
+        #     cutoff_from = int(split_acc * len(df2))
+        #     cutoff_to = int((split_acc+split_perc) * len(df2))
+        #     split_acc += split_perc
+        #     _df = df2[cutoff_from:cutoff_to]
+        #     dfs2.append(_df)
 
-        return dfs1, dfs2, None, is_faithful1, is_faithful2, is_faithful3
+        return df1, df2, None, is_faithful1, is_faithful2, is_faithful3
 
 
 
@@ -516,7 +516,7 @@ def generate_dataset(setup):
     #    #print('No dependence in overlap')
     #    return
 
-    dfs1, dfs2, is_any_client_faithful, is_faithful1, is_faithful2, is_faithful_overlap = test_ci(df_msep, num_samples, test_setup, perc_split)
+    df1, df2, is_any_client_faithful, is_faithful1, is_faithful2, is_faithful_overlap = test_ci(df_msep, num_samples, test_setup, perc_split)
     #print(df_msep)
 
     #print(len(df_msep))
@@ -538,15 +538,17 @@ def generate_dataset(setup):
 
     now = int(datetime.datetime.utcnow().timestamp()*1e3)
 
-    ds_file_pattern = './experiments/datasets/data6/{}-{}-{}-{}-{}-{}.parquet'
+    ds_file_pattern = './experiments/datasets/data7/{}-{}-{}-{}-{}.parquet'
 
+    df1.write_parquet(ds_file_pattern.format(now, test_setup[2], num_samples, faith_id, 'p1'))
+    df2.write_parquet(ds_file_pattern.format(now, test_setup[2], num_samples, faith_id, 'p2'))
 
-    for i,df1 in enumerate(dfs1):
-        _split_perc = f'{len(df1)/num_samples:.2f}'
-        df1.write_parquet(ds_file_pattern.format(now, test_setup[2], num_samples, _split_perc, faith_id, f'd1_{i}'))
-    for i,df2 in enumerate(dfs2):
-        _split_perc = f'{len(df2)/num_samples:.2f}'
-        df2.write_parquet(ds_file_pattern.format(now, test_setup[2], num_samples, _split_perc, faith_id, f'd2_{i}'))
+    # for i,df1 in enumerate(dfs1):
+    #     _split_perc = f'{len(df1)/num_samples:.2f}'
+    #     df1.write_parquet(ds_file_pattern.format(now, test_setup[2], num_samples, _split_perc, faith_id, f'd1_{i}'))
+    # for i,df2 in enumerate(dfs2):
+    #     _split_perc = f'{len(df2)/num_samples:.2f}'
+    #     df2.write_parquet(ds_file_pattern.format(now, test_setup[2], num_samples, _split_perc, faith_id, f'd2_{i}'))
 
     # GET M SEPARABILITY
     #df = is_m_separable(test_setup)
