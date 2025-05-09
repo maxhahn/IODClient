@@ -3,7 +3,7 @@ import polars.selectors as cs
 
 import os
 
-dir = 'experiments/simulation/results5/'
+dir = 'experiments/simulation/results6/'
 
 #all_faithful_ids = [f.rpartition('-')[0] for f in os.listdir('experiments/datasets/f2')]
 #all_unfaithful_ids = [f.rpartition('-')[0] for f in os.listdir('experiments/datasets/uf2')]
@@ -91,6 +91,14 @@ df = df.with_columns(
     correct_as_pooled_fisher=pl.col('indep_pooled')==pl.col('indep_fisher'),
     correct_as_pooled_fedci=pl.col('indep_pooled')==pl.col('indep_fedci'),
 )
+
+df = df.with_columns(
+    fed_lt_fisher=pl.col('pvalue_fedci')<pl.col('pvalue_fisher')
+)
+
+__df = df.filter((pl.col('MSep'))&(pl.col('indep_fedci')!=pl.col('indep_fisher')))
+print(__df.select('MSep','filename'))
+
 
 #print(df.filter(~pl.col('correct_fedci') & pl.col('correct_fisher')).select('filename', 'X','Y','S',cs.contains('pvalue')))
 
@@ -192,8 +200,8 @@ plot = _df.hvplot.scatter(
     x='pvalue_pooled',
     y=['Federated', 'Meta-Analysis'],
     alpha=0.8,
-    ylim=(-0.001,0.1),
-    xlim=(-0.001,0.1),
+    ylim=(-0.01,1.01),
+    xlim=(-0.01,1.01),
     width=400,
     height=400,
     #by='Method',
@@ -209,6 +217,54 @@ plot = _df.hvplot.scatter(
 
 _render =  hv.render(plot, backend='matplotlib')
 _render.savefig(f'images/ci_table/scatter-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+
+
+###
+plot = _df.hvplot.scatter(
+    x='Federated',
+    y='Meta-Analysis',
+    by='MSep',
+    alpha=0.5,
+    ylim=(-0.01,0.05),
+    xlim=(0.05,1.01),
+    width=400,
+    height=400,
+    #by='Method',
+    legend='bottom_right',
+    #backend='matplotlib',
+    s=4000,
+    xlabel=r'Federated p-value',  # LaTeX-escaped #
+    ylabel=r'Meta-Analysis p-value',
+    #marker=['v', '^'],
+    #linestyle=['dashed', 'dotted']
+    #title=f'{"Client" if i == 1 else "Clients"}'
+)
+
+_render =  hv.render(plot, backend='matplotlib')
+_render.savefig(f'images/ci_table/scatter-test-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+
+plot = _df.hvplot.scatter(
+    x='Federated',
+    y='Meta-Analysis',
+    by='MSep',
+    alpha=0.5,
+    ylim=(0.05,1.01),
+    xlim=(-0.01,0.05),
+    width=400,
+    height=400,
+    #by='Method',
+    legend='top_left',
+    #backend='matplotlib',
+    s=4000,
+    xlabel=r'Federated p-value',  # LaTeX-escaped #
+    ylabel=r'Meta-Analysis p-value',
+    #marker=['v', '^'],
+    #linestyle=['dashed', 'dotted']
+    #title=f'{"Client" if i == 1 else "Clients"}'
+)
+
+_render =  hv.render(plot, backend='matplotlib')
+_render.savefig(f'images/ci_table/scatter-test-independent-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 
 
