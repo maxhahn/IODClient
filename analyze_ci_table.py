@@ -3,7 +3,9 @@ import polars.selectors as cs
 
 import os
 
-dir = 'experiments/simulation/results7'
+#dir = 'experiments/simulation/results7'
+dir = 'experiments/simulation/slides'
+#dir = 'experiments/simulation/single_data' # USE SINGLE DATA TO PLOT DIFF TO REAL P VALUE
 
 #all_faithful_ids = [f.rpartition('-')[0] for f in os.listdir('experiments/datasets/f2')]
 #all_unfaithful_ids = [f.rpartition('-')[0] for f in os.listdir('experiments/datasets/uf2')]
@@ -50,8 +52,8 @@ three_tail_pags = [t-1 for t in three_tail_pags]
 df = df.with_columns(
     faithfulness=pl.col('filename').str.split('-').list.get(-3),
     num_samples=pl.col('filename').str.split('-').list.get(2).cast(pl.Int32),
-    split_sizes=pl.col('filename').str.split('(').list.get(1).str.split(')').list.get(0).str.split('_'),
-    pag_id=pl.col('filename').str.split('-').list.get(1).cast(pl.Int32)
+    split_sizes=pl.col('filename').str.split('(').list.get(1).str.split(')').list.get(0).str.split('_').cast(pl.List(pl.Int32)),
+    pag_id=pl.col('filename').str.split('-').list.get(1)#.cast(pl.Int32)
 )
 df = df.with_columns(num_splits=pl.col('split_sizes').list.len())
 
@@ -63,10 +65,10 @@ faithfulness_filter = None#'g'
 #faithfulness_filter = 'gl'
 #faithfulness_filter = 'n'
 
-df = df.filter(pl.col('num_samples') == 4000)
+df = df.filter(pl.col('num_samples') == 8000)
 
-#df = df.filter(pl.col('num_splits') == 6)
-#df = df.filter(pl.col('split_sizes').list.max() == 1)
+df = df.filter(pl.col('num_splits') == 6)
+#df = df.filter(pl.col('split_sizes').list.max() == 4)
 
 if faithfulness_filter is None:
     faithfulness_filter= 'all'
@@ -114,6 +116,7 @@ print(df.group_by('num_splits', 'MSep').agg(cs.starts_with('correct_').mean(), p
 #print(df.group_by('ord', 'X', 'Y', 'S').agg(pl.col('MSep').first(), cs.starts_with('correct_').sum(), pl.len()).sort('ord', 'X', 'Y', 'S'))
 #print(df.group_by('ord', 'X', 'Y', 'S').agg(pl.col('MSep').first(), cs.starts_with('correct_').sum() / pl.len(), pl.len()).sort('ord', 'X', 'Y', 'S'))
 
+print(df.group_by('ord', 'X', 'Y', 'S', 'MSep').agg(pl.col('correct_fedci', 'correct_fisher').mean(), pl.len()).sort('ord', 'X', 'Y', 'S'))
 # TODO: Visualizations of pvalues:
 # - scatter plot
 # - corr plot?
@@ -164,7 +167,7 @@ _render =  hv.render(plot, backend='matplotlib')
 _render.savefig(f'images/ci_table/scatter-indep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 _df = df.filter(~pl.col('MSep'))
-_df = _df.sample(min(len(_df), 2000))
+#_df = _df.sample(min(len(_df), 2000))
 
 _df = _df.rename({
     'pvalue_fedci': 'Federated',
@@ -195,7 +198,7 @@ _render.savefig(f'images/ci_table/scatter-dep-{faithfulness_filter}.svg', format
 
 
 _df = df
-_df = _df.sample(min(len(_df), 2000))
+#_df = _df.sample(min(len(_df), 2000))
 
 _df = _df.rename({
     'pvalue_fedci': 'Federated',
@@ -247,7 +250,7 @@ plot = _df.hvplot.scatter(
 )
 
 _render =  hv.render(plot, backend='matplotlib')
-_render.savefig(f'images/ci_table/scatter-test-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+_render.savefig(f'images/ci_table/scatter-fedci-v-fisher-dependent-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 plot = _df.hvplot.scatter(
     x='Federated',
@@ -270,8 +273,56 @@ plot = _df.hvplot.scatter(
 )
 
 _render =  hv.render(plot, backend='matplotlib')
-_render.savefig(f'images/ci_table/scatter-test-independent-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+_render.savefig(f'images/ci_table/scatter-fedci-v-fisher-independent-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
+
+
+_df = df
+_df = df.with_columns(
+    confusion_value=pl.when(
+        pl.col('correct_fisher') & pl.col('correct_fedci')
+    ).then(
+        pl.lit('Correct')
+    ).when(
+        ~pl.col('correct_fisher') & pl.col('correct_fedci')
+    ).then(
+        pl.lit('Fisher Incorrect')
+    ).when(
+        pl.col('correct_fisher') & ~pl.col('correct_fedci')
+    ).then(
+        pl.lit('Fedci Incorrect')
+    ).otherwise(
+        pl.lit('Both Incorrect')
+    )
+)
+
+_df = _df.rename({
+    'pvalue_fedci': 'Federated',
+    'pvalue_fisher': 'Meta-Analysis',
+})
+
+plot = _df.hvplot.scatter(
+    x='Federated',
+    y='Meta-Analysis',
+    by='confusion_value',
+    alpha=0.5,
+    ylim=(-0.01,1.01),
+    xlim=(-0.01,1.01),
+    width=400,
+    height=400,
+    #by='Method',
+    legend='top_left',
+    #backend='matplotlib',
+    s=4000,
+    xlabel=r'Federated p-value',  # LaTeX-escaped #
+    ylabel=r'Meta-Analysis p-value',
+    #marker=['v', '^'],
+    #linestyle=['dashed', 'dotted']
+    #title=f'{"Client" if i == 1 else "Clients"}'
+)
+
+_render =  hv.render(plot, backend='matplotlib')
+_render.savefig(f'images/ci_table/scatter-fedci-v-fisher-colored-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 
 
@@ -325,7 +376,7 @@ _df = df
 
 # p-value approx = 0 appears to be way too easy. Make sure pvalues on pooled data are at least slightly away from 0 for plot
 #l1 = len(_df)
-#_df = _df.filter(pl.col('pvalue_pooled') > 1e-8)
+_df = _df.filter(pl.col('pvalue_pooled') > 1e-8)
 #print(f'All data: Removed {100-(len(_df)/l1)*100:.3f}% ({l1-len(_df)} samples) of data because of proximity to 0')
 
 _df = _df.rename({
@@ -333,9 +384,25 @@ _df = _df.rename({
     'pvalue_diff_fisher_pooled': 'Meta-Analysis',
 })
 
-plot = _df.hvplot.box(
-    y=['Federated', 'Meta-Analysis'],
-    ylabel=r'p-value Difference',
+_df = _df.with_columns(test_id=pl.col('X')+pl.col('Y')+pl.col('S'))
+
+#print(_df.select('Federated', 'test_id', cs.contains('pvalue')).head())
+
+_df = _df.unpivot(
+    on=['Federated', 'Meta-Analysis'],
+    index='test_id',
+    value_name='p-value Difference',
+    variable_name='Method'
+)
+
+_df = _df.with_columns(pl.col('Method').replace_strict({'Meta-Analysis': 'M', 'Federated': 'F'}))
+
+plot = _df.sort('test_id', 'Method').hvplot.box(
+    y='p-value Difference',# 'Meta-Analysis'],
+    #y='Federated',# 'Meta-Analysis'],
+    #y='Meta-Analysis',# 'Meta-Analysis'],
+    by=['test_id', 'Method'],
+    ylabel='p-value Difference',
     xlabel='Method',
     #ylim=(-0.000005,0.000005)
     showfliers=False

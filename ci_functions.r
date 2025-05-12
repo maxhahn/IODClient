@@ -9,38 +9,6 @@ library(gtools)
 library(rIOD)
 library(dagitty)
 
-#n_cores <- 8
-#plan("multicore", workers = n_cores, gc=TRUE)
-#options(error = function() traceback(3))
-get_datax <- function(true_pag_amat, num_samples, variable_levels, mode, coef_thresh) {
-  #print(true_pag_amat)
-  #print(type(true_pag_amat))
-  #print(class(true_pag_amat))  # Should be "matrix"
-  #print(dim(true_pag_amat))    # Should show (5,5) in your case
-  #print(attributes(true_pag_amat))  # Should only show "dim"
-
-  #adag <- dagitty::canonicalize(getMAG(true_pag_amat)$magg)$g
-  #print(adag)
-  #print(class(adag))  # Should be "dagitty"
-  #print(str(adag))    # See internal structure
-
-  f.args <- list()
-  cols <- colnames(true_pag_amat)
-  for (vari in 1:length(cols)) {
-      var_name <- colnames(true_pag_amat)[vari]
-      f.args[[var_name]] <- list(levels = variable_levels[[vari]])
-  }
-
-  f.args
-
-  dat_out <- FCI.Utils::generateDatasetFromPAG(apag = true_pag_amat,
-    N=num_samples,
-    type = mode,#"continuous",#type = "mixed",
-    coef_thresh=coef_thresh,
-    f.args = f.args
-  )
-  dat_out
-}
 
 get_data <- function(true_pag_amat, num_samples, variable_levels, mode, coef_thresh) {
 
@@ -115,9 +83,45 @@ get_data <- function(true_pag_amat, num_samples, variable_levels, mode, coef_thr
 }
 
 
+get_data_for_single_pag <- function(num_samples, variable_levels, mode, coef_thresh) {
+  true.amat.pag <- t(matrix(c(0,0,2,2,0,
+                             0,0,2,0,0,
+                             2,1,0,2,2,
+                             2,0,3,0,2,
+                             0,0,3,3,0), 5, 5))
+  colnames(true.amat.pag) <- c("A", "B", "C", "D", "E")
+  rownames(true.amat.pag) <- colnames(true.amat.pag)
+
+  return(get_data(true.amat.pag, num_samples, variable_levels, mode, coef_thresh))
+}
+
+
 msep <- function(true_pag_amat, x, y, s) {
     result <- isMSeparated(true_pag_amat, x, y, s)
     result
+}
+
+msep_for_single_pag <- function(x, y, s) {
+    true.amat.pag <- t(matrix(c(0,0,2,2,0,
+                              0,0,2,0,0,
+                              2,1,0,2,2,
+                              2,0,3,0,2,
+                              0,0,3,3,0), 5, 5))
+    colnames(true.amat.pag) <- c("A", "B", "C", "D", "E")
+    rownames(true.amat.pag) <- colnames(true.amat.pag)
+    result <- isMSeparated(true.amat.pag, x, y, s)
+    result
+}
+
+get_slide_pag <- function(x, y, s) {
+    true.amat.pag <- t(matrix(c(0,0,2,2,0,
+                              0,0,2,0,0,
+                              2,1,0,2,2,
+                              2,0,3,0,2,
+                              0,0,3,3,0), 5, 5))
+    colnames(true.amat.pag) <- c("A", "B", "C", "D", "E")
+    rownames(true.amat.pag) <- colnames(true.amat.pag)
+    true.amat.pag
 }
 
 run_ci_test <- function(data, max_cond_set_cardinality, filedir, filename) {

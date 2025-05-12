@@ -44,6 +44,9 @@ run_ci_test_f = ro.globalenv['run_ci_test']
 aggregate_ci_results_f = ro.globalenv['aggregate_ci_results']
 iod_on_ci_data_f = ro.globalenv['iod_on_ci_data']
 
+get_slide_pag_f = ro.globalenv['get_slide_pag']
+
+
 truePAGs, subsetsList = load_pags()
 
 subsetsList = [(sorted(tuple(x[0])), sorted(tuple(x[1]))) for x in subsetsList]
@@ -442,15 +445,11 @@ ALPHA = 0.05
 # TODO: run the tests done so far for fedci with colliders with order IOD
 # 500,1000,5000,10000 with 2,4 clients 10 times
 
-DATA_DIR = 'experiments/simulation/results7'
+DATA_DIR = 'experiments/simulation/slides'
 
 #test_setups = test_setups[5:10]
 data_dir = f'{DATA_DIR}a'
 data_file_pattern = '{}-{}.ndjson'
-
-faithful_path = './experiments/datasets/f2/'
-unfaithful_path = './experiments/datasets/uf2/'
-
 
 
 def run_comparison(setup):
@@ -494,9 +493,9 @@ def run_comparison(setup):
         _df = df2[cutoff_from:cutoff_to]
         dfs2.append(_df)
 
-    pag_id = int(data_id.split('-')[1])
+    pag_id = data_id.split('-')[1]
     num_samples = int(data_id.split('-')[2])
-    true_pag = pag_lookup[pag_id]
+    true_pag = get_slide_pag_f()
 
     df_faith = pl.read_parquet(f'experiments/pag_msep/pag-{pag_id}.parquet')
     df_faith = df_faith.with_columns(
@@ -676,21 +675,18 @@ def run_comparison(setup):
 
 import os
 
-pag_lookup = {i: pag for i, pag in enumerate(truePAGs)}
-
-dataset_dir = 'experiments/datasets/data7'
+dataset_dir = 'experiments/datasets/data_slides'
 dataset_files = os.listdir(dataset_dir)
 dataset_files_subset = {}
 for f in dataset_files:
     id = f.rpartition('-')[0]
     dataset_files_subset[id] = (f'{dataset_dir}/{id}-p1.parquet', f'{dataset_dir}/{id}-p2.parquet')
 
-#perc_split = [4,4,1,1]
-perc_split = [1,1,1,1,1,1]
-#perc_split = [1,1]
+#perc_split = [1,1,1,1]
+#perc_split = [1,1,1,1,1,1]
+perc_split = [1,1]
 
-configurations = [(id, client_files, perc_split) for id, client_files in dataset_files_subset.items() if '-4000-' in id and '-g' == id[-2:]]#and '780-' in id and '-22-' in id ]
-
+configurations = [(id, client_files, perc_split) for id, client_files in dataset_files_subset.items() if '-8000-' in id and '-g' == id[-2:]]#and '780-' in id and '-22-' in id ]
 
 from tqdm.contrib.concurrent import process_map
 
