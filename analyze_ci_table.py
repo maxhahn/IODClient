@@ -65,9 +65,9 @@ faithfulness_filter = None#'g'
 #faithfulness_filter = 'gl'
 #faithfulness_filter = 'n'
 
-df = df.filter(pl.col('num_samples') == 8000)
+df = df.filter(pl.col('num_samples') == 4000)
 
-df = df.filter(pl.col('num_splits') == 6)
+df = df.filter(pl.col('num_splits') == 4)
 #df = df.filter(pl.col('split_sizes').list.max() == 4)
 
 if faithfulness_filter is None:
@@ -122,6 +122,8 @@ print(df.group_by('ord', 'X', 'Y', 'S', 'MSep').agg(pl.col('correct_fedci', 'cor
 # - corr plot?
 # - difference between fisher/fedci to pooled as boxplot
 # Do visualizations for MSep = True / MSep = False (or use indep_pooled)
+
+#print(df.filter(~pl.col('correct_fisher')).select('filename', 'X','Y','S','MSep', cs.contains('pvalue')-cs.contains('pooled')))
 
 import hvplot
 import hvplot.polars
