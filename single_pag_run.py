@@ -342,7 +342,6 @@ for seed in SEEDS:
         fci2_fedci_updated = (result_fedci[2][1], result_fedci[3][1])
 
         g_fci1 = data2graph(fci1_fedci_updated[0], fci1_fedci_updated[1])
-        print(fci1_fedci_updated[0], g_fci1)
         save_graph(g_fci1, identifier, f'fci1-fedci-updated')
         g_fci2 = data2graph(fci2_fedci_updated[0], fci2_fedci_updated[1])
         save_graph(g_fci2, identifier, f'fci2-fedci-updated')
