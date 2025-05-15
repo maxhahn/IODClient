@@ -33,9 +33,9 @@ run_ci_test_f = ro.globalenv['run_ci_test']
 get_data_f = ro.globalenv['get_data_for_single_pag']
 
 ALPHA = 0.05
-NUM_SAMPLES = 20000
-SPLITS = [[1,1], [2,1], [1,2]]
-SEEDS = range(10000)
+NUM_SAMPLES = [15_000,20_000,30_000,50_000]
+SPLITS = [[1,1], [2,1], [1,2], [3,1], [1,3]]
+SEEDS = [x+200_000 for x in range(100_000)]
 
 DF_MSEP = pl.read_parquet(
     'experiments/pag_msep/pag-slides.parquet'
@@ -258,7 +258,7 @@ def save_graph(graph, identifier, filename):
     with open(f'{graph_dir}/{identifier}/{filename}.png', 'wb') as f:
         f.write(png_bytes)
 
-def test_faithfulness(df, df_msep):
+def test_faithfulness(df, df_msep, antijoin_df=None):
     result_df, result_labels = mxm_ci_test(df)
     result_df = pl.from_pandas(result_df)
     result_df = result_df.with_columns(indep=pl.col('pvalue')>ALPHA)
@@ -269,14 +269,17 @@ def test_faithfulness(df, df_msep):
         pl.col('S').str.split(',').list.eval(pl.element().replace(mapping)).list.sort().list.join(','),
     )
 
+    if antijoin_df is not None:
+        result_df = result_df.join(antijoin_df, on=['ord', 'X', 'Y', 'S'], how='anti')
+
     faithful_df = result_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='inner', coalesce=True)
     is_faithful = faithful_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(faithful_df)
-    return is_faithful
+    return is_faithful, result_df
 
 def split_data(df, splits):
     dfs = []
 
-    is_faithful = test_faithfulness(df, DF_MSEP)
+    is_faithful, overlap_df = test_faithfulness(df, DF_MSEP)
     if not is_faithful:
         return dfs
 
@@ -285,8 +288,8 @@ def split_data(df, splits):
         df1 = df[:int(perc_1*len(df))].select(partition_1_labels)
         df2 = df[int(perc_1*len(df)):].select(partition_2_labels)
 
-        is_faithful1 = test_faithfulness(df1, DF_MSEP)
-        is_faithful2 = test_faithfulness(df2, DF_MSEP)
+        is_faithful1, _ = test_faithfulness(df1, DF_MSEP, overlap_df)
+        is_faithful2, _ = test_faithfulness(df2, DF_MSEP, overlap_df)
         if not is_faithful1 or not is_faithful2:
             continue
 
@@ -294,55 +297,56 @@ def split_data(df, splits):
     return dfs
 
 for seed in SEEDS:
-    df = get_data(NUM_SAMPLES, seed)
-    dfs = split_data(df, SPLITS)
+    for num_samples in NUM_SAMPLES:
+        df = get_data(num_samples, seed)
+        dfs = split_data(df, SPLITS)
 
-    if len(dfs) == 0:
-        print(f'No faithful data for {NUM_SAMPLES} samples and seed {seed}')
-        continue
-
-    print(f'Found faithful data for {NUM_SAMPLES} samples and seed {seed}: {len(dfs)}')
-
-    for split, df1, df2 in dfs:
-        identifier = f'{NUM_SAMPLES}-{seed}-{"_".join([str(s) for s in split])}'
-
-        result_fci1, result_fci2, result_fisher, result_fedci = test_dataset(df1, df2)
-
-        if len(result_fisher[0]) != 1 or len(result_fedci[0]) != 1:
-            print(f'... Fisher got {len(result_fisher[0])} results, Fedci got {len(result_fedci[0])} results. Skipping...')
+        if len(dfs) == 0:
+            print(f'No faithful data for {num_samples} samples and seed {seed}')
             continue
 
-        if np.array_equal(np.array(result_fisher[0][0]), np.array(result_fedci[0][0])):
-            print('... Fisher and Fedci got same result. Skipping...')
-            continue
+        print(f'Found faithful data for {num_samples} samples and seed {seed}: {len(dfs)}')
 
-        print('!!! Found differing PAGs')
+        for split, df1, df2 in dfs:
+            identifier = f'{num_samples}-{seed}-{"_".join([str(s) for s in split])}'
 
-        g_fci1 = data2graph(result_fci1[0], result_fci1[1])
-        save_graph(g_fci1, identifier, f'fci1')
-        g_fci2 = data2graph(result_fci2[0], result_fci2[1])
-        save_graph(g_fci2, identifier, f'fci2')
+            result_fci1, result_fci2, result_fisher, result_fedci = test_dataset(df1, df2)
 
-        for i,(r,l) in enumerate(zip(result_fisher[0], result_fisher[1])):
-            g_fisher = data2graph(r, l)
-            save_graph(g_fisher, identifier, f'fisher-{i}')
+            if len(result_fisher[0]) != 1 or len(result_fedci[0]) != 1:
+                print(f'... Fisher got {len(result_fisher[0])} results, Fedci got {len(result_fedci[0])} results. Skipping...')
+                continue
 
-        fci1_fisher_updated = (result_fisher[2][0], result_fisher[3][0])
-        fci2_fisher_updated = (result_fisher[2][1], result_fisher[3][1])
+            if np.array_equal(np.array(result_fisher[0][0]), np.array(result_fedci[0][0])):
+                print('... Fisher and Fedci got same result. Skipping...')
+                continue
 
-        g_fci1 = data2graph(fci1_fisher_updated[0], fci1_fisher_updated[1])
-        save_graph(g_fci1, identifier, f'fci1-fisher-updated')
-        g_fci2 = data2graph(fci2_fisher_updated[0], fci2_fisher_updated[1])
-        save_graph(g_fci2, identifier, f'fci2-fisher-updated')
+            print('!!! Found differing PAGs')
 
-        for i,(r,l) in enumerate(zip(result_fedci[0], result_fedci[1])):
-            g_fedci = data2graph(r, l)
-            save_graph(g_fedci, identifier, f'fedci-{i}')
+            g_fci1 = data2graph(result_fci1[0], result_fci1[1])
+            save_graph(g_fci1, identifier, f'fci1')
+            g_fci2 = data2graph(result_fci2[0], result_fci2[1])
+            save_graph(g_fci2, identifier, f'fci2')
 
-        fci1_fedci_updated = (result_fedci[2][0], result_fedci[3][0])
-        fci2_fedci_updated = (result_fedci[2][1], result_fedci[3][1])
+            for i,(r,l) in enumerate(zip(result_fisher[0], result_fisher[1])):
+                g_fisher = data2graph(r, l)
+                save_graph(g_fisher, identifier, f'fisher-{i}')
 
-        g_fci1 = data2graph(fci1_fedci_updated[0], fci1_fedci_updated[1])
-        save_graph(g_fci1, identifier, f'fci1-fedci-updated')
-        g_fci2 = data2graph(fci2_fedci_updated[0], fci2_fedci_updated[1])
-        save_graph(g_fci2, identifier, f'fci2-fedci-updated')
+            fci1_fisher_updated = (result_fisher[2][0], result_fisher[3][0])
+            fci2_fisher_updated = (result_fisher[2][1], result_fisher[3][1])
+
+            g_fci1 = data2graph(fci1_fisher_updated[0], fci1_fisher_updated[1])
+            save_graph(g_fci1, identifier, f'fci1-fisher-updated')
+            g_fci2 = data2graph(fci2_fisher_updated[0], fci2_fisher_updated[1])
+            save_graph(g_fci2, identifier, f'fci2-fisher-updated')
+
+            for i,(r,l) in enumerate(zip(result_fedci[0], result_fedci[1])):
+                g_fedci = data2graph(r, l)
+                save_graph(g_fedci, identifier, f'fedci-{i}')
+
+            fci1_fedci_updated = (result_fedci[2][0], result_fedci[3][0])
+            fci2_fedci_updated = (result_fedci[2][1], result_fedci[3][1])
+
+            g_fci1 = data2graph(fci1_fedci_updated[0], fci1_fedci_updated[1])
+            save_graph(g_fci1, identifier, f'fci1-fedci-updated')
+            g_fci2 = data2graph(fci2_fedci_updated[0], fci2_fedci_updated[1])
+            save_graph(g_fci2, identifier, f'fci2-fedci-updated')
