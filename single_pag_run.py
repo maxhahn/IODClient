@@ -272,7 +272,6 @@ def test_faithfulness(df, df_msep, antijoin_df=None):
 
     if antijoin_df is not None:
         result_df = result_df.join(antijoin_df, on=['ord', 'X', 'Y', 'S'], how='anti')
-    print(len(df), result_df)
 
     faithful_df = result_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='inner', coalesce=True)
     is_faithful = faithful_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(faithful_df)
