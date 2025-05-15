@@ -34,7 +34,7 @@ get_data_f = ro.globalenv['get_data_for_single_pag']
 
 ALPHA = 0.05
 NUM_SAMPLES = [10_000, 15_000, 20_000]
-SPLITS = [[1,1], [2,1], [1,2], [3,1], [1,3]]
+SPLITS = [[1,1], [2,1], [1,2], [1,1,1], [1,2,1], [1,1,1,1], [2,2,1,1]]
 SEEDS = [x+100_000 for x in range(100_000)]
 
 DF_MSEP = pl.read_parquet(
