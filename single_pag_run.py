@@ -197,7 +197,7 @@ def server_results_to_dataframe(server, labels, results):
         rows.append((len(test.conditioning_set), labels.index(test.v0)+1, labels.index(test.v1)+1, s_labels_string, test.p_val))
 
     df = pd.DataFrame(data=rows, columns=columns)
-    return df
+    return pl.from_pandas(df)
 
 def test_dataset(df1, df2):
     # STEP 1: FCI FOR BOTH DFs
