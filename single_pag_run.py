@@ -33,9 +33,9 @@ run_ci_test_f = ro.globalenv['run_ci_test']
 get_data_f = ro.globalenv['get_data_for_single_pag']
 
 ALPHA = 0.05
-NUM_SAMPLES = [15_000,20_000,30_000,50_000]
+NUM_SAMPLES = [10_000, 15_000, 20_000]
 SPLITS = [[1,1], [2,1], [1,2], [3,1], [1,3]]
-SEEDS = [x+200_204 for x in range(100_000)]
+SEEDS = [x+100_000 for x in range(100_000)]
 
 DF_MSEP = pl.read_parquet(
     'experiments/pag_msep/pag-slides.parquet'
@@ -272,6 +272,7 @@ def test_faithfulness(df, df_msep, antijoin_df=None):
 
     if antijoin_df is not None:
         result_df = result_df.join(antijoin_df, on=['ord', 'X', 'Y', 'S'], how='anti')
+    print(len(df), result_df)
 
     faithful_df = result_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='inner', coalesce=True)
     is_faithful = faithful_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(faithful_df)
@@ -280,7 +281,7 @@ def test_faithfulness(df, df_msep, antijoin_df=None):
 def split_data(df, splits):
     dfs = []
 
-    is_faithful, overlap_df = test_faithfulness(df, DF_MSEP)
+    is_faithful, overlap_df = test_faithfulness(df.select(intersection_labels), DF_MSEP)
     if not is_faithful:
         return dfs
 
