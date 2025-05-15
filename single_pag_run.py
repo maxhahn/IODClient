@@ -35,7 +35,7 @@ get_data_f = ro.globalenv['get_data_for_single_pag']
 ALPHA = 0.05
 NUM_SAMPLES = [15_000,20_000,30_000,50_000]
 SPLITS = [[1,1], [2,1], [1,2], [3,1], [1,3]]
-SEEDS = [x+200_000 for x in range(100_000)]
+SEEDS = [x+200_204 for x in range(100_000)]
 
 DF_MSEP = pl.read_parquet(
     'experiments/pag_msep/pag-slides.parquet'
@@ -199,25 +199,26 @@ def server_results_to_dataframe(server, labels, results):
     df = pd.DataFrame(data=rows, columns=columns)
     return pl.from_pandas(df)
 
-def test_dataset(df1, df2):
+def test_dataset(dfs):
     # STEP 1: FCI FOR BOTH DFs
 
-    with (ro.default_converter + pandas2ri.converter + numpy2ri.converter).context():
-        fci_result_df1 = run_fci_f(df1.to_pandas(), ro.StrVector(sorted(df1.columns)))
-        fci_result_df2 = run_fci_f(df2.to_pandas(), ro.StrVector(sorted(df2.columns)))
+    fci_results = []
+    for df in dfs:
+        with (ro.default_converter + pandas2ri.converter + numpy2ri.converter).context():
+            fci_result_df = run_fci_f(df.to_pandas(), ro.StrVector(sorted(df.columns)))
+        fci_results.append(fci_result_df)
 
     # STEP 2: IOD WITH META-ANALYSIS
     # -> Load results df and just get pvalues from there
     #pvalue_df_meta = pvalue_df.select('ord', 'X', 'Y', 'S', pvalue=pl.col('pvalue_fisher'))
-    meta_dfs, meta_labels = zip(*[mxm_ci_test(d) for d in [df1, df2]])
+    meta_dfs, meta_labels = zip(*[mxm_ci_test(d) for d in dfs])
     iod_result_fisher = run_pval_agg_iod(meta_dfs, meta_labels)
 
     # STEP 3: IOD WITH FEDCI
     # -> Load results df and just get pvalues from there
     server = fedci.Server(
         {
-            '1': fedci.Client(df1),
-            '2': fedci.Client(df2),
+            str(i):fedci.Client(d) for i,d in enumerate(dfs, start=1)
         }
     )
 
@@ -229,10 +230,10 @@ def test_dataset(df1, df2):
     iod_result_fedci = run_riod(
         fedci_df.to_pandas(),
         fedci_all_labels,
-        {'1':sorted(df1.columns), '2':sorted(df2.columns)}
+        {str(i):sorted(d.columns) for i,d in enumerate(dfs, start=1)}
     )
 
-    return (fci_result_df1, sorted(df1.columns)), (fci_result_df2, sorted(df2.columns)), iod_result_fisher, iod_result_fedci
+    return (fci_results, [sorted(d.columns) for d in dfs]), iod_result_fisher, iod_result_fedci
 
 
 def data2graph(data, labels):
@@ -284,16 +285,23 @@ def split_data(df, splits):
         return dfs
 
     for split in splits:
-        perc_1 = split[0]/sum(split)
-        df1 = df[:int(perc_1*len(df))].select(partition_1_labels)
-        df2 = df[int(perc_1*len(df)):].select(partition_2_labels)
+        _dfs = []
+        for i in range(1,len(split)+1):
+            from_idx = int(sum(split[:i-1])/sum(split) * len(df))
+            to_idx = int(sum(split[:i])/sum(split) * len(df))
+            #print(i, len(df), from_idx, to_idx)
+            df_i = df[from_idx:to_idx]
+            if i % 2 == 0:
+                df_i = df_i.select(partition_1_labels)
+            else:
+                df_i = df_i.select(partition_2_labels)
+            _dfs.append(df_i)
 
-        is_faithful1, _ = test_faithfulness(df1, DF_MSEP, overlap_df)
-        is_faithful2, _ = test_faithfulness(df2, DF_MSEP, overlap_df)
+        is_faithful1 = test_faithfulness(pl.concat(_dfs[0::2]), DF_MSEP, overlap_df)
+        is_faithful2 = test_faithfulness(pl.concat(_dfs[1::2]), DF_MSEP, overlap_df)
         if not is_faithful1 or not is_faithful2:
             continue
-
-        dfs.append((split, df1, df2))
+        dfs.append((split,_dfs))
     return dfs
 
 for seed in SEEDS:
@@ -306,11 +314,13 @@ for seed in SEEDS:
             continue
 
         print(f'Found faithful data for {num_samples} samples and seed {seed}: {len(dfs)}')
+        with open('./faithful_finds.csv', 'a') as f:
+            f.write(f'{num_samples},{seed},{SPLITS}')
 
-        for split, df1, df2 in dfs:
+        for split, _dfs in dfs:
             identifier = f'{num_samples}-{seed}-{"_".join([str(s) for s in split])}'
 
-            result_fci1, result_fci2, result_fisher, result_fedci = test_dataset(df1, df2)
+            result_fci, result_fisher, result_fedci = test_dataset(_dfs)
 
             if len(result_fisher[0]) != 1 or len(result_fedci[0]) != 1:
                 print(f'... Fisher got {len(result_fisher[0])} results, Fedci got {len(result_fedci[0])} results. Skipping...')
@@ -322,31 +332,24 @@ for seed in SEEDS:
 
             print('!!! Found differing PAGs')
 
-            g_fci1 = data2graph(result_fci1[0], result_fci1[1])
-            save_graph(g_fci1, identifier, f'fci1')
-            g_fci2 = data2graph(result_fci2[0], result_fci2[1])
-            save_graph(g_fci2, identifier, f'fci2')
+            for i, (_split, (fci_adj_mat, fci_labels)) in enumerate(zip(split,result_fci), start=1):
+                g_fci = data2graph(fci_adj_mat, fci_labels)
+                save_graph(g_fci, identifier, f'fci-{str(_split)}-{i}')
 
-            for i,(r,l) in enumerate(zip(result_fisher[0], result_fisher[1])):
-                g_fisher = data2graph(r, l)
+            for i, (_adj_mat, _labels) in enumerate(zip(result_fisher[0], result_fisher[1]), start=1):
+                g_fisher = data2graph(_adj_mat, _labels)
                 save_graph(g_fisher, identifier, f'fisher-{i}')
 
-            fci1_fisher_updated = (result_fisher[2][0], result_fisher[3][0])
-            fci2_fisher_updated = (result_fisher[2][1], result_fisher[3][1])
+            for i, (_adj_mat, _labels) in enumerate(zip(result_fisher[2], result_fisher[3]), start=1):
+                fci_fisher_updated = (_adj_mat, _labels)
+                g_fci = data2graph(*fci_fisher_updated)
+                save_graph(g_fci, identifier, f'fci-{i}-fisher-updated')
 
-            g_fci1 = data2graph(fci1_fisher_updated[0], fci1_fisher_updated[1])
-            save_graph(g_fci1, identifier, f'fci1-fisher-updated')
-            g_fci2 = data2graph(fci2_fisher_updated[0], fci2_fisher_updated[1])
-            save_graph(g_fci2, identifier, f'fci2-fisher-updated')
-
-            for i,(r,l) in enumerate(zip(result_fedci[0], result_fedci[1])):
-                g_fedci = data2graph(r, l)
+            for i, (_adj_mat, _labels) in enumerate(zip(result_fedci[0], result_fedci[1]), start=1):
+                g_fedci = data2graph(_adj_mat, _labels)
                 save_graph(g_fedci, identifier, f'fedci-{i}')
 
-            fci1_fedci_updated = (result_fedci[2][0], result_fedci[3][0])
-            fci2_fedci_updated = (result_fedci[2][1], result_fedci[3][1])
-
-            g_fci1 = data2graph(fci1_fedci_updated[0], fci1_fedci_updated[1])
-            save_graph(g_fci1, identifier, f'fci1-fedci-updated')
-            g_fci2 = data2graph(fci2_fedci_updated[0], fci2_fedci_updated[1])
-            save_graph(g_fci2, identifier, f'fci2-fedci-updated')
+            for i, (_adj_mat, _labels) in enumerate(zip(result_fedci[2], result_fedci[3]), start=1):
+                fci_fedci_updated = (_adj_mat, _labels)
+                g_fci = data2graph(*fci_fedci_updated)
+                save_graph(g_fci, identifier, f'fci-{i}-fedci-updated')

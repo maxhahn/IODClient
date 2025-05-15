@@ -65,9 +65,9 @@ faithfulness_filter = None#'g'
 #faithfulness_filter = 'gl'
 #faithfulness_filter = 'n'
 
-df = df.filter(pl.col('num_samples') == 8000)
+df = df.filter(pl.col('num_samples') == 4000)
 
-df = df.filter(pl.col('num_splits') == 2)
+df = df.filter(pl.col('num_splits') == 4)
 #df = df.filter(pl.col('split_sizes').list.max() == 4)
 
 if faithfulness_filter is None:
