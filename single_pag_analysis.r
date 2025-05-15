@@ -52,7 +52,7 @@ aggregate_ci_results <- function(labelList_, ci_data, alpha, procedure) {
   }
   index <- 1
   iod_out$Gi_PAG_Label_List <- list()
-  for (gipag in iod_out$Gi_PAG_List) {
+  for (gipag in iod_out$Gi_PAG_list) {
     iod_out$Gi_PAG_Label_List[[index]] <- colnames(gipag)
     index <- index + 1
   }
@@ -118,8 +118,9 @@ iod_on_ci_data <- function(labelList_, suffStat, alpha, procedure) {
   }
 
   index <- 1
+  print(iod_out)
   iod_out$Gi_PAG_Label_List <- list()
-  for (gipag in iod_out$Gi_PAG_List) {
+  for (gipag in iod_out$Gi_PAG_list) {
     iod_out$Gi_PAG_Label_List[[index]] <- colnames(gipag)
     index <- index + 1
   }
@@ -195,4 +196,93 @@ run_ci_test <- function(data, max_cond_set_cardinality, filedir, filename) {
                                       citestResults_folder=filedir)
   result <- list(citestResults=citestResults, labels=labels)
   result
+}
+
+get_data <- function(true_pag_amat, num_samples, mode, coef_thresh) {
+
+  var_levels  <- list()
+  cols <- colnames(true_pag_amat)
+  for (vari in 1:length(cols)) {
+      var_name <- colnames(true_pag_amat)[vari]
+      var_levels[[var_name]] <- 1#variable_levels[[vari]]
+  }
+
+  # Convert PAG adjacency matrix to canonical DAG
+  adag <- dagitty::canonicalize(getMAG(true_pag_amat)$magg)$g
+  print(adag)
+
+  f.args <- list()
+  cols <- names(adag)
+
+  for (var_name in cols) {
+    f.args[[var_name]] <- list()
+    var_level = var_levels[[var_name]]
+    var_level = if (is.null(var_level)) 1 else var_level
+    f.args[[var_name]]$levels <- var_level
+
+
+    # Determine parents
+    parent_names <- parents(adag, var_name)
+
+    # Initialize betas
+    betas <- list()
+
+    if (length(parent_names) > 0) {
+      for (parent_name in parent_names) {
+        #k <- f.args[[var_name]]$levels
+        k <- f.args[[parent_name]]$levels
+        k = if (is.null(k)) 1 else k
+
+        if (k > 2) {
+          # Multinomial case: generate matrix of (k-1) rows × 1 column
+          coefs <- runif(k - 1, min = -1, max = 1)
+          while (any(abs(coefs) < coef_thresh)) {
+            coefs <- runif(k - 1, min = -1, max = 1)
+          }
+          beta_matrix <- matrix(coefs, nrow = k - 1, ncol = 1)
+          rownames(beta_matrix) <- paste0("L", 2:k)  # optional
+          colnames(beta_matrix) <- parent_name
+          betas[[parent_name]] <- beta_matrix
+        } else {
+          # Binary or continuous case: single scalar
+          coef <- runif(1, min = -1, max = 1)
+          while (abs(coef) < coef_thresh) {
+            coef <- runif(1, min = -1, max = 1)
+          }
+          betas[[parent_name]] <- coef
+        }
+      }
+    }
+
+    # Always set betas, even if empty
+    f.args[[var_name]]$betas <- betas
+  }
+
+  # Generate data
+  dat_out <- FCI.Utils::generateDataset(
+    adag = adag,
+    N = num_samples,
+    type = mode,
+    coef_thresh = 0.001,
+    f.args = f.args
+  )
+
+  return(dat_out)
+}
+
+
+get_data_for_single_pag <- function(num_samples, mode, coef_thresh, seed=NULL) {
+  if (!is.null(seed)) {
+    set.seed(seed)
+  }
+
+  true.amat.pag <- t(matrix(c(0,0,2,2,0,
+                             0,0,2,0,0,
+                             2,1,0,2,2,
+                             2,0,3,0,2,
+                             0,0,3,3,0), 5, 5))
+  colnames(true.amat.pag) <- c("A", "B", "C", "D", "E")
+  rownames(true.amat.pag) <- colnames(true.amat.pag)
+
+  return(get_data(true.amat.pag, num_samples, mode, coef_thresh))
 }

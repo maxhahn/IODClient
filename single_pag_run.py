@@ -3,10 +3,18 @@ import polars.selectors as cs
 import numpy as np
 
 from collections import OrderedDict
+import os
 
 import rpy2.robjects as ro
 from rpy2.robjects import numpy2ri
 from rpy2.robjects import pandas2ri
+
+import graphviz
+arrow_type_lookup = {
+        1: 'odot',
+        2: 'normal',
+        3: 'none'
+    }
 
 # supress R log
 import rpy2.rinterface_lib.callbacks as cb
@@ -18,21 +26,58 @@ run_fci_f = ro.globalenv['run_fci']
 iod_on_ci_data_f = ro.globalenv['iod_on_ci_data']
 aggregate_ci_results_f = ro.globalenv['aggregate_ci_results']
 run_ci_test_f = ro.globalenv['run_ci_test']
+get_data_f = ro.globalenv['get_data_for_single_pag']
+
+ALPHA = 0.05
+NUM_SAMPLES = 15000
+SPLITS = [[1,1], [2,1], [1,2]]
+SEEDS = range(100)
+
+DF_MSEP = pl.read_parquet(
+    'experiments/pag_msep/pag-slides.parquet'
+).with_columns(
+    pl.col('S').list.join(',')
+).with_columns(
+    ord=pl.when(
+        pl.col('S').str.len_chars() == 0).then(
+            pl.lit(0)
+        ).otherwise(
+            pl.col('S').str.count_matches(',') + 1
+        )
+)
+
+graph_dir = 'experiments/graphs'
+data_dir = 'experiments/datasets/data_slides'
+#target_id = '1747098690714-slides-4000-g'
+
+#target_id = '1746980535602-slides-8000-g'
+#target_id = '1747095310771-slides-4000-g'
+#target_id = '1747098690714-slides-4000-g'
+#target_id = '1747157391970-slides-4000-g'
+target_id = '1747234664372-slides-4000-g'
+
+
+pvalue_results_dir = 'experiments/simulation/slides'
+target_ids = [target_id]
+
+partition_1_labels = ['A', 'C', 'D', 'E']
+partition_2_labels = ['A', 'B', 'C', 'E']
+intersection_labels = sorted(list(set(partition_1_labels)&set(partition_2_labels)))
+
+
+def get_data(num_samples, seed):
+    dat = get_data_f(num_samples, 'continuous', 0.2, seed)
+    with (ro.default_converter + pandas2ri.converter).context():
+        df = ro.conversion.get_conversion().rpy2py(dat[0])
+    df = pl.from_pandas(df)
+    return df
 
 def run_pval_agg_iod(dfs, client_labels, alpha=0.05, procedure='original'):
-
-    #ro.r['source']('./aggregation.r')
-    #aggregate_ci_results_f = ro.globalenv['aggregate_ci_results']
 
     with (ro.default_converter + pandas2ri.converter + numpy2ri.converter).context():
         lvs = []
         r_dfs = [ro.conversion.get_conversion().py2rpy(df) for df in dfs]
-        #r_dfs = ro.ListVector(r_dfs)
         label_list = [ro.StrVector(v) for v in client_labels]
-
-        #true_pag_np = np.array(true_pag)
-        #r_matrix = ro.r.matrix(ro.FloatVector(true_pag_np.flatten()), nrow=len(true_labels), ncol=len(true_labels))
-        #colnames = ro.StrVector(true_labels)
 
         result = aggregate_ci_results_f(label_list, r_dfs, alpha, procedure)
 
@@ -67,11 +112,6 @@ def run_pval_agg_iod(dfs, client_labels, alpha=0.05, procedure='original'):
     }
 
 def run_riod(df, labels, client_labels, alpha=0.05, procedure='original'):
-    # ro.r['source']('./aggregation.r')
-    # iod_on_ci_data_f = ro.globalenv['iod_on_ci_data']
-    # Reading and processing data
-    #df = pl.read_csv("./random-data-1.csv")
-
     # let index start with 1
     df.index += 1
 
@@ -79,17 +119,12 @@ def run_riod(df, labels, client_labels, alpha=0.05, procedure='original'):
     users = list(client_labels.keys())
 
     with (ro.default_converter + pandas2ri.converter + numpy2ri.converter).context():
-        #converting it into r object for passing into r function
         suff_stat = [
             ('citestResults', ro.conversion.get_conversion().py2rpy(df)),
             ('all_labels', ro.StrVector(labels)),
         ]
         suff_stat = OrderedDict(suff_stat)
         suff_stat = ro.ListVector(suff_stat)
-
-        #true_pag_np = np.array(true_pag)
-        #r_matrix = ro.r.matrix(ro.FloatVector(true_pag_np.flatten()), nrow=len(true_labels), ncol=len(true_labels))
-        #colnames = ro.StrVector(true_labels)
 
         result = iod_on_ci_data_f(label_list, suff_stat, alpha, procedure)
 
@@ -100,9 +135,8 @@ def run_riod(df, labels, client_labels, alpha=0.05, procedure='original'):
         gi_pag_labels = [list([str(a) for a in x[1]]) for x in result['Gi_PAG_Label_List'].items()]
         gi_pag_list = [np.array(pag).astype(int).tolist() for pag in gi_pag_list]
 
-        #print(true_labels, labels, g_pag_labels)
         found_correct_pag = bool(result['found_correct_pag'][0])
-        #print(found_correct_pag)
+
         g_pag_shd = [x[1][0].item() for x in result['G_PAG_SHD'].items()]
         g_pag_for = [x[1][0].item() for x in result['G_PAG_FOR'].items()]
         g_pag_fdr = [x[1][0].item() for x in result['G_PAG_FDR'].items()]
@@ -131,40 +165,14 @@ def mxm_ci_test(df):
     df = df.with_columns(cs.string().cast(pl.Categorical()))
     df = df.to_pandas()
     with (ro.default_converter + pandas2ri.converter).context():
-        # # load local-ci script
-        # ro.r['source']('./local-ci.r')
-        # # load function from R script
-        # run_ci_test_f = ro.globalenv['run_ci_test']
-        #converting it into r object for passing into r function
         df_r = ro.conversion.get_conversion().py2rpy(df)
-        #Invoking the R function and getting the result
         result = run_ci_test_f(df_r, 999, "./examples/", 'dummy')
-        #Converting it back to a pandas dataframe.
         df_pvals = ro.conversion.get_conversion().rpy2py(result['citestResults'])
         labels = list(result['labels'])
     return df_pvals, labels
 
 
-data_dir = 'experiments/datasets/data_slides'
-#target_id = '1747098690714-slides-4000-g'
-
-#target_id = '1746980535602-slides-8000-g'
-#target_id = '1747095310771-slides-4000-g'
-#target_id = '1747098690714-slides-4000-g'
-#target_id = '1747157391970-slides-4000-g'
-target_id = '1747234664372-slides-4000-g'
-
-
-pvalue_results_dir = 'experiments/simulation/slides'
-
-def test_dataset(file_id):
-
-    df1 = pl.read_parquet(f'{data_dir}/{target_id}-p1.parquet')
-    df2 = pl.read_parquet(f'{data_dir}/{target_id}-p2.parquet')
-
-    #df1.write_csv('test1.csv')
-    #df2.write_csv('test2.csv')
-
+def test_dataset(df1, df2):
     # STEP 1: FCI FOR BOTH DFs
 
     with (ro.default_converter + pandas2ri.converter + numpy2ri.converter).context():
@@ -173,7 +181,6 @@ def test_dataset(file_id):
 
     # LOAD PVALUE DF
     pvalue_df = pl.read_parquet(f'{pvalue_results_dir}/{target_id}-*(1_1)*.parquet')
-    #pvalue_df.write_csv('pvals.csv')
 
     # STEP 2: IOD WITH META-ANALYSIS
     # -> Load results df and just get pvalues from there
@@ -200,12 +207,7 @@ def test_dataset(file_id):
 
     return (fci_result_df1, sorted(df1.columns)), (fci_result_df2, sorted(df2.columns)), iod_result_fisher, iod_result_fedci
 
-import graphviz
-arrow_type_lookup = {
-        1: 'odot',
-        2: 'normal',
-        3: 'none'
-    }
+
 def data2graph(data, labels):
     graph = graphviz.Digraph(format='png')
     for i in range(len(data)):
@@ -220,53 +222,100 @@ def data2graph(data, labels):
                 graph.edge(labels[i], labels[j], arrowtail=arrow_type_lookup[arrtail], arrowhead=arrow_type_lookup[arrhead])
 
     return graph
-# g.pipe(format='png')
 
-graph_dir = 'experiments/graphs'
-def save_graph(graph, filename):
+def save_graph(graph, identifier, filename):
     png_bytes = graph.pipe(format='png')
+    if not os.path.exists(f'{graph_dir}/{identifier}'):
+        os.makedirs(f'{graph_dir}/{identifier}')
     # Optionally, save manually without the .gv
-    with open(f'{graph_dir}/{filename}.png', 'wb') as f:
+    with open(f'{graph_dir}/{identifier}/{filename}.png', 'wb') as f:
         f.write(png_bytes)
 
+def test_faithfulness(df, df_msep):
+    result_df, result_labels = mxm_ci_test(df)
+    result_df = pl.from_pandas(result_df)
+    result_df = result_df.with_columns(indep=pl.col('pvalue')>ALPHA)
+    mapping = {str(i):l for i,l in enumerate(df.columns, start=1)}
+    result_df = result_df.with_columns(
+        pl.col('X').cast(pl.Utf8).replace(mapping),
+        pl.col('Y').cast(pl.Utf8).replace(mapping),
+        pl.col('S').str.split(',').list.eval(pl.element().replace(mapping)).list.sort().list.join(','),
+    )
 
-target_ids = [target_id]
+    faithful_df = result_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='inner', coalesce=True)
+    is_faithful = faithful_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(faithful_df)
+    return is_faithful
 
-for target_id in target_ids:
-    print('Testing', target_id)
-    result_fci1, result_fci2, result_fisher, result_fedci = test_dataset(target_id)
+def split_data(df, splits):
+    dfs = []
 
+    is_faithful = test_faithfulness(df, DF_MSEP)
+    if not is_faithful:
+        return dfs
 
-    if len(result_fisher[0]) != 1 or len(result_fedci[0]) != 1:
-        print(f'Fisher got {len(result_fisher[0])} results, Fedci got {len(result_fedci[0])} results. Skipping...')
+    for split in splits:
+        perc_1 = split[0]/sum(split)
+        df1 = df[:int(perc_1*len(df))].select(partition_1_labels)
+        df2 = df[int(perc_1*len(df)):].select(partition_2_labels)
+
+        is_faithful1 = test_faithfulness(df1, DF_MSEP)
+        is_faithful2 = test_faithfulness(df2, DF_MSEP)
+        if not is_faithful1 or not is_faithful2:
+            continue
+
+        dfs.append((split, df1, df2))
+    return dfs
+
+for seed in SEEDS:
+    df = get_data(NUM_SAMPLES, seed)
+    dfs = split_data(df, SPLITS)
+
+    if len(dfs) == 0:
+        print(f'No faithful data for {NUM_SAMPLES} samples and seed {seed}')
         continue
 
-    g_fci1 = data2graph(result_fci1[0], result_fci1[1])
-    save_graph(g_fci1, f'fci1')
-    g_fci2 = data2graph(result_fci2[0], result_fci2[1])
-    save_graph(g_fci2, f'fci2')
+    print(f'Found faithful data for {NUM_SAMPLES} samples and seed {seed}: {len(dfs)}')
 
-    for i,(r,l) in enumerate(zip(result_fisher[0], result_fisher[1])):
-        g_fisher = data2graph(r, l)
-        save_graph(g_fisher, f'fisher-{i}')
+    for split, df1, df2 in dfs:
+        identifier = f'{NUM_SAMPLES}-{seed}-{"_".join(split)}'
 
-    fci1_fisher_updated = (result_fisher[2][0], result_fisher[3][0])
-    fci2_fisher_updated = (result_fisher[2][1], result_fisher[3][1])
+        result_fci1, result_fci2, result_fisher, result_fedci = test_dataset(df1, df2)
 
-    g_fci1 = data2graph(fci1_fisher_updated[0], fci1_fisher_updated[1])
-    save_graph(g_fci1, f'fci1-fisher-updated')
-    g_fci2 = data2graph(fci2_fisher_updated[0], fci2_fisher_updated[1])
-    save_graph(g_fci2, f'fci2-fisher-updated')
+        if len(result_fisher[0]) != 1 or len(result_fedci[0]) != 1:
+            print(f'... Fisher got {len(result_fisher[0])} results, Fedci got {len(result_fedci[0])} results. Skipping...')
+            continue
 
-    for i,(r,l) in enumerate(zip(result_fedci[0], result_fedci[1])):
-        g_fedci = data2graph(r, l)
-        save_graph(g_fedci, f'fedci-{i}')
+        if np.array_equal(np.array(result_fisher[0][0]), np.array(result_fedci[0][0])):
+            print('... Fisher and Fedci got same result. Skipping...')
 
-    fci1_fedci_updated = (result_fedci[2][0], result_fedci[3][0])
-    fci2_fedci_updated = (result_fedci[2][1], result_fedci[3][1])
+        print('!!! Found differing PAGs')
 
-    g_fci1 = data2graph(fci1_fedci_updated[0], fci1_fedci_updated[1])
-    print(fci1_fedci_updated[0], g_fci1)
-    save_graph(g_fci1, f'fci1-fedci-updated')
-    g_fci2 = data2graph(fci2_fedci_updated[0], fci2_fedci_updated[1])
-    save_graph(g_fci2, f'fci2-fedci-updated')
+        g_fci1 = data2graph(result_fci1[0], result_fci1[1])
+        save_graph(g_fci1, identifier, f'fci1')
+        g_fci2 = data2graph(result_fci2[0], result_fci2[1])
+        save_graph(g_fci2, identifier, f'fci2')
+
+        for i,(r,l) in enumerate(zip(result_fisher[0], result_fisher[1])):
+            g_fisher = data2graph(r, l)
+            save_graph(g_fisher, identifier, f'fisher-{i}')
+
+        fci1_fisher_updated = (result_fisher[2][0], result_fisher[3][0])
+        fci2_fisher_updated = (result_fisher[2][1], result_fisher[3][1])
+
+        g_fci1 = data2graph(fci1_fisher_updated[0], fci1_fisher_updated[1])
+        save_graph(g_fci1, identifier, f'fci1-fisher-updated')
+        g_fci2 = data2graph(fci2_fisher_updated[0], fci2_fisher_updated[1])
+        save_graph(g_fci2, identifier, f'fci2-fisher-updated')
+
+        for i,(r,l) in enumerate(zip(result_fedci[0], result_fedci[1])):
+            g_fedci = data2graph(r, l)
+            save_graph(g_fedci, identifier, f'fedci-{i}')
+
+        fci1_fedci_updated = (result_fedci[2][0], result_fedci[3][0])
+        fci2_fedci_updated = (result_fedci[2][1], result_fedci[3][1])
+
+        g_fci1 = data2graph(fci1_fedci_updated[0], fci1_fedci_updated[1])
+        print(fci1_fedci_updated[0], g_fci1)
+        save_graph(g_fci1, identifier, f'fci1-fedci-updated')
+        g_fci2 = data2graph(fci2_fedci_updated[0], fci2_fedci_updated[1])
+        save_graph(g_fci2, identifier, f'fci2-fedci-updated')

@@ -682,11 +682,11 @@ for f in dataset_files:
     id = f.rpartition('-')[0]
     dataset_files_subset[id] = (f'{dataset_dir}/{id}-p1.parquet', f'{dataset_dir}/{id}-p2.parquet')
 
-perc_split = [1,1,1,1]
+#perc_split = [1,1,1,1]
 #perc_split = [1,1,1,1,1,1]
-#perc_split = [1,1]
+perc_split = [1,1]
 
-configurations = [(id, client_files, perc_split) for id, client_files in dataset_files_subset.items() if '-4000-' in id and '-g' == id[-2:]]#and '780-' in id and '-22-' in id ]
+configurations = [(id, client_files, perc_split) for id, client_files in dataset_files_subset.items() if '-8000-' in id and '-g' == id[-2:]]#and '780-' in id and '-22-' in id ]
 
 from tqdm.contrib.concurrent import process_map
 
