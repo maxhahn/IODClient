@@ -314,6 +314,7 @@ for seed in SEEDS:
 
         if np.array_equal(np.array(result_fisher[0][0]), np.array(result_fedci[0][0])):
             print('... Fisher and Fedci got same result. Skipping...')
+            continue
 
         print('!!! Found differing PAGs')
 
