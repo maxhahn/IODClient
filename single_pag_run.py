@@ -1,8 +1,12 @@
 import polars as pl
 import polars.selectors as cs
 import numpy as np
+import pandas as pd
+
+import fedci
 
 from collections import OrderedDict
+import itertools
 import os
 
 import rpy2.robjects as ro
@@ -171,6 +175,29 @@ def mxm_ci_test(df):
         labels = list(result['labels'])
     return df_pvals, labels
 
+def server_results_to_dataframe(server, labels, results):
+    likelihood_ratio_tests = server.get_likelihood_ratio_tests()
+
+    columns = ('ord', 'X', 'Y', 'S', 'pvalue')
+    rows = []
+
+    lrt_ord_0 = [(lrt.v0, lrt.v1) for lrt in likelihood_ratio_tests if len(lrt.conditioning_set) == 0]
+    label_combinations = itertools.combinations(labels, 2)
+    missing_base_rows = []
+    for label_combination in label_combinations:
+        if label_combination in lrt_ord_0:
+            continue
+        #print('MISSING', label_combination)
+        l0, l1 = label_combination
+        missing_base_rows.append((0, labels.index(l0)+1, labels.index(l1)+1, "", 1))
+    rows += missing_base_rows
+
+    for test in likelihood_ratio_tests:
+        s_labels_string = ','.join(sorted([str(labels.index(l)+1) for l in test.conditioning_set]))
+        rows.append((len(test.conditioning_set), labels.index(test.v0)+1, labels.index(test.v1)+1, s_labels_string, test.p_val))
+
+    df = pd.DataFrame(data=rows, columns=columns)
+    return df
 
 def test_dataset(df1, df2):
     # STEP 1: FCI FOR BOTH DFs
@@ -178,9 +205,6 @@ def test_dataset(df1, df2):
     with (ro.default_converter + pandas2ri.converter + numpy2ri.converter).context():
         fci_result_df1 = run_fci_f(df1.to_pandas(), ro.StrVector(sorted(df1.columns)))
         fci_result_df2 = run_fci_f(df2.to_pandas(), ro.StrVector(sorted(df2.columns)))
-
-    # LOAD PVALUE DF
-    pvalue_df = pl.read_parquet(f'{pvalue_results_dir}/{target_id}-*(1_1)*.parquet')
 
     # STEP 2: IOD WITH META-ANALYSIS
     # -> Load results df and just get pvalues from there
@@ -190,18 +214,21 @@ def test_dataset(df1, df2):
 
     # STEP 3: IOD WITH FEDCI
     # -> Load results df and just get pvalues from there
-    pvalue_df_fedci = pvalue_df.select('ord', 'X', 'Y', 'S', pvalue=pl.col('pvalue_fedci'))
-    fedci_labels = sorted(list(set(df1.columns)|set(df2.columns)))
-    label_mapping = {l:str(i) for i,l in enumerate(fedci_labels, start=1)}
-    pvalue_df_fedci = pvalue_df_fedci.with_columns(
-        pl.col('X').cast(pl.Utf8).replace(label_mapping),
-        pl.col('Y').cast(pl.Utf8).replace(label_mapping),
-        pl.col('S').str.split(',').list.eval(pl.element().replace(label_mapping)).list.sort().list.join(','),
+    server = fedci.Server(
+        {
+            '1': fedci.Client(df1),
+            '2': fedci.Client(df2),
+        }
     )
 
+    fedci_results = server.run()
+    fedci_all_labels = sorted(list(server.schema.keys()))
+    client_labels = {id: sorted(list(schema.keys())) for id, schema in server.client_schemas.items()}
+    fedci_df = server_results_to_dataframe(server, fedci_all_labels, fedci_results)
+
     iod_result_fedci = run_riod(
-        pvalue_df_fedci.to_pandas(),
-        fedci_labels,
+        fedci_df.to_pandas(),
+        fedci_all_labels,
         {'1':sorted(df1.columns), '2':sorted(df2.columns)}
     )
 
