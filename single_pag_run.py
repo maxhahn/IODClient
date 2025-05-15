@@ -29,9 +29,9 @@ run_ci_test_f = ro.globalenv['run_ci_test']
 get_data_f = ro.globalenv['get_data_for_single_pag']
 
 ALPHA = 0.05
-NUM_SAMPLES = 15000
+NUM_SAMPLES = 20000
 SPLITS = [[1,1], [2,1], [1,2]]
-SEEDS = range(100)
+SEEDS = range(10000)
 
 DF_MSEP = pl.read_parquet(
     'experiments/pag_msep/pag-slides.parquet'
@@ -277,7 +277,7 @@ for seed in SEEDS:
     print(f'Found faithful data for {NUM_SAMPLES} samples and seed {seed}: {len(dfs)}')
 
     for split, df1, df2 in dfs:
-        identifier = f'{NUM_SAMPLES}-{seed}-{"_".join(split)}'
+        identifier = f'{NUM_SAMPLES}-{seed}-{"_".join([str(s) for s in split])}'
 
         result_fci1, result_fci2, result_fisher, result_fedci = test_dataset(df1, df2)
 
