@@ -51,11 +51,7 @@ DF_MSEP = pl.read_parquet(
             pl.col('S').str.count_matches(',') + 1
         )
 )
-true.amat.pag <- t(matrix(c(0,0,2,2,0,
-                           0,0,2,0,0,
-                           2,1,0,2,2,
-                           2,0,3,0,2,
-                           0,0,3,3,0), 5, 5))
+
 TRUE_PAG = np.array([
     [0,0,2,2,0],
     [0,0,2,0,0],
