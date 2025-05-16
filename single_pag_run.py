@@ -36,7 +36,7 @@ get_data_f = ro.globalenv['get_data_for_single_pag']
 ALPHA = 0.05
 NUM_SAMPLES = [5_000, 7500, 10_000]
 SPLITS = [[1,1], [2,1], [1,2], [3,1], [1,3], [4,1], [1,4], [1,1,1,1], [2,2,1,1]]
-SEEDS = [x+201_000 for x in range(100_000)]
+SEEDS = [x+200_499 for x in range(100_000)]
 COEF_THRESHOLD = 0.1
 
 DF_MSEP = pl.read_parquet(
@@ -360,6 +360,8 @@ for seed in SEEDS:
 
             print('!!! Found differing PAGs')
             _faithfulness_df.write_ndjson(f'{graph_dir}/{identifier}/faithfulness.ndjson')
+            for i, _df in enumerate(_dfs, start=1):
+                _df.write_parquet(f'{graph_dir}/{identifier}/data-{i}.parquet')
 
             for i, (_split, (fci_adj_mat, fci_labels)) in enumerate(zip(split,result_fci), start=1):
                 g_fci = data2graph(fci_adj_mat, fci_labels)
