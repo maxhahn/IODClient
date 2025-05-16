@@ -1,3 +1,4 @@
+from re import A
 import polars as pl
 import polars.selectors as cs
 import numpy as np
@@ -33,9 +34,10 @@ run_ci_test_f = ro.globalenv['run_ci_test']
 get_data_f = ro.globalenv['get_data_for_single_pag']
 
 ALPHA = 0.05
-NUM_SAMPLES = [10_000, 15_000, 20_000]
-SPLITS = [[1,1], [2,1], [1,2], [1,1,1], [1,2,1], [1,1,1,1], [2,2,1,1]]
-SEEDS = [x+100_000 for x in range(100_000)]
+NUM_SAMPLES = [5_000, 7500, 10_000]
+SPLITS = [[1,1], [2,1], [1,2], [3,1], [1,3], [4,1], [1,4], [1,1,1,1], [2,2,1,1]]
+SEEDS = [x+201_000 for x in range(100_000)]
+COEF_THRESHOLD = 0.1
 
 DF_MSEP = pl.read_parquet(
     'experiments/pag_msep/pag-slides.parquet'
@@ -49,6 +51,18 @@ DF_MSEP = pl.read_parquet(
             pl.col('S').str.count_matches(',') + 1
         )
 )
+true.amat.pag <- t(matrix(c(0,0,2,2,0,
+                           0,0,2,0,0,
+                           2,1,0,2,2,
+                           2,0,3,0,2,
+                           0,0,3,3,0), 5, 5))
+TRUE_PAG = np.array([
+    [0,0,2,2,0],
+    [0,0,2,0,0],
+    [2,1,0,2,2],
+    [2,0,3,0,2],
+    [0,0,3,3,0]
+])
 
 graph_dir = 'experiments/graphs'
 data_dir = 'experiments/datasets/data_slides'
@@ -70,7 +84,7 @@ intersection_labels = sorted(list(set(partition_1_labels)&set(partition_2_labels
 
 
 def get_data(num_samples, seed):
-    dat = get_data_f(num_samples, 'continuous', 0.2, seed)
+    dat = get_data_f(num_samples, 'continuous', COEF_THRESHOLD, seed)
     with (ro.default_converter + pandas2ri.converter).context():
         df = ro.conversion.get_conversion().rpy2py(dat[0])
     df = pl.from_pandas(df)
@@ -227,28 +241,33 @@ def test_dataset(dfs):
     client_labels = {id: sorted(list(schema.keys())) for id, schema in server.client_schemas.items()}
     fedci_df = server_results_to_dataframe(server, fedci_all_labels, fedci_results)
 
+    # fully_matches = True
+    # for _meta_df in meta_dfs:
+    #     control_df = fedci_df.join(_meta_df, on=['ord', 'X', 'Y', 'S'], how='inner', coalesce=True)
+    #     is_match = sum(control_df.select(ci_matches=(pl.col('pvalue')>ALPHA)==(pl.col('pvalue_right')>ALPHA))['ci_matches'].to_list()) == len(control_df)
+    #     if not is_match:
+    #         fully_matches = False
+    # if fully_matches:
+    #     return None
+
     iod_result_fedci = run_riod(
         fedci_df.to_pandas(),
         fedci_all_labels,
         {str(i):sorted(d.columns) for i,d in enumerate(dfs, start=1)}
     )
 
-    return (fci_results, [sorted(d.columns) for d in dfs]), iod_result_fisher, iod_result_fedci
-
+    return zip(fci_results, [sorted(d.columns) for d in dfs]), iod_result_fisher, iod_result_fedci
 
 def data2graph(data, labels):
     graph = graphviz.Digraph(format='png')
     for i in range(len(data)):
         for j in range(i+1,len(data)):
-            arrhead = data[i][j]
-            arrtail = data[j][i]
-            if data[i][j] == 1:
-                graph.edge(labels[i], labels[j], arrowtail=arrow_type_lookup[arrtail], arrowhead=arrow_type_lookup[arrhead])
-            elif data[i][j] == 2:
-                graph.edge(labels[i], labels[j], arrowtail=arrow_type_lookup[arrtail], arrowhead=arrow_type_lookup[arrhead])
-            elif data[i][j] == 3:
-                graph.edge(labels[i], labels[j], arrowtail=arrow_type_lookup[arrtail], arrowhead=arrow_type_lookup[arrhead])
-
+            arrhead = int(data[i][j])
+            arrtail = int(data[j][i])
+            if arrhead == 0 or arrtail == 0:
+                continue
+            #print(f'Drawing {labels[i]} {arrow_type_lookup[arrtail]}-{arrow_type_lookup[arrhead]} {labels[j]}')
+            graph.edge(labels[i], labels[j], arrowtail=arrow_type_lookup[arrtail], arrowhead=arrow_type_lookup[arrhead], dir='both')
     return graph
 
 def save_graph(graph, identifier, filename):
@@ -274,14 +293,17 @@ def test_faithfulness(df, df_msep, antijoin_df=None):
         result_df = result_df.join(antijoin_df, on=['ord', 'X', 'Y', 'S'], how='anti')
 
     faithful_df = result_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='inner', coalesce=True)
-    is_faithful = faithful_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(faithful_df)
-    return is_faithful, result_df
+    faithful_df = faithful_df.with_columns(is_faithful=(pl.col('indep') == pl.col('MSep')))
+    is_faithful = faithful_df['is_faithful'].sum() == len(faithful_df)
+
+    return is_faithful, result_df, faithful_df
 
 def split_data(df, splits):
     dfs = []
 
-    is_faithful, overlap_df = test_faithfulness(df.select(intersection_labels), DF_MSEP)
+    is_faithful, overlap_df, _ = test_faithfulness(df.select(intersection_labels), DF_MSEP)
     if not is_faithful:
+        #print('...... Intersection of partitions not faithful. Skipping...')
         return dfs
 
     for split in splits:
@@ -297,44 +319,67 @@ def split_data(df, splits):
                 df_i = df_i.select(partition_2_labels)
             _dfs.append(df_i)
 
+        all_partitions_faithful = True
+        faithfulness_dfs = []
+        for i, df_i in enumerate(_dfs, start=1):
+            is_faithful, _, faithfulness_df = test_faithfulness(df_i, DF_MSEP)
+            faithfulness_dfs.append(faithfulness_df.filter(~pl.col('is_faithful')).select('ord', 'X', 'Y', 'S', client_number=pl.lit(i), split_portion=pl.lit(split[i-1])))
+            all_partitions_faithful = all_partitions_faithful and is_faithful
+        if all_partitions_faithful:
+            #print('...... All partitions are faithful. Skipping...')
+            continue
+
         is_faithful1 = test_faithfulness(pl.concat(_dfs[0::2]), DF_MSEP, overlap_df)
         is_faithful2 = test_faithfulness(pl.concat(_dfs[1::2]), DF_MSEP, overlap_df)
+
         if not is_faithful1 or not is_faithful2:
+            #print('...... Data is not faithful globally. Skipping...')
             continue
-        dfs.append((split,_dfs))
+        dfs.append((split, _dfs, pl.concat(faithfulness_dfs)))
     return dfs
 
 for seed in SEEDS:
     for num_samples in NUM_SAMPLES:
+        print(f'Running for {num_samples} samples and seed {seed}')
+
         df = get_data(num_samples, seed)
         dfs = split_data(df, SPLITS)
 
         if len(dfs) == 0:
-            print(f'No faithful data for {num_samples} samples and seed {seed}')
+            print(f'... No suitable data found. Skipping...')
             continue
 
-        print(f'Found faithful data for {num_samples} samples and seed {seed}: {len(dfs)}')
+        print(f'Found suitable data: {len(dfs)}')
         with open('./faithful_finds.csv', 'a') as f:
             f.write(f'{num_samples},{seed},{SPLITS}')
 
-        for split, _dfs in dfs:
+        for split, _dfs, _faithfulness_df in dfs:
             identifier = f'{num_samples}-{seed}-{"_".join([str(s) for s in split])}'
 
-            result_fci, result_fisher, result_fedci = test_dataset(_dfs)
-
-            if len(result_fisher[0]) != 1 or len(result_fedci[0]) != 1:
-                print(f'... Fisher got {len(result_fisher[0])} results, Fedci got {len(result_fedci[0])} results. Skipping...')
+            test_results = test_dataset(_dfs)
+            if test_results is None:
+                print('... CI tables for Fisher and Fedci fully match. Skipping...')
                 continue
 
-            if np.array_equal(np.array(result_fisher[0][0]), np.array(result_fedci[0][0])):
-                print('... Fisher and Fedci got same result. Skipping...')
+            result_fci, result_fisher, result_fedci = test_results
+
+            # if len(result_fisher[0]) != 1 or len(result_fedci[0]) != 1:
+            #     print(f'... Fisher got {len(result_fisher[0])} results, Fedci got {len(result_fedci[0])} results. Skipping...')
+            #     continue
+            if len(result_fisher[0]) == 1 or len(result_fedci[0]) != 1:
+                print(f'... Fisher got {len(result_fisher[0])} results. Fedci got {len(result_fedci[0])} results. Skipping...')
+                continue
+
+            if not np.array_equal(np.array(result_fedci[0]), TRUE_PAG):
+                print(f'... Fedci is wrong. Skipping...')
                 continue
 
             print('!!! Found differing PAGs')
+            _faithfulness_df.write_ndjson(f'{graph_dir}/{identifier}/faithfulness.ndjson')
 
             for i, (_split, (fci_adj_mat, fci_labels)) in enumerate(zip(split,result_fci), start=1):
                 g_fci = data2graph(fci_adj_mat, fci_labels)
-                save_graph(g_fci, identifier, f'fci-{str(_split)}-{i}')
+                save_graph(g_fci, identifier, f'fci-split{str(_split)}-{i}')
 
             for i, (_adj_mat, _labels) in enumerate(zip(result_fisher[0], result_fisher[1]), start=1):
                 g_fisher = data2graph(_adj_mat, _labels)
