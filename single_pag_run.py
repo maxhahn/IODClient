@@ -35,8 +35,8 @@ get_data_f = ro.globalenv['get_data_for_single_pag']
 
 ALPHA = 0.05
 NUM_SAMPLES = [5_000, 7500, 10_000, 15_000]
-SPLITS = [[1,1], [2,1], [1,2]]
-SEEDS = [x+200_300 for x in range(100_000)]
+SPLITS = [[1,1], [2,1], [1,2], [3,1], [1,3], [4,1], [1,4]]
+SEEDS = [x+200_500 for x in range(100_000)]
 COEF_THRESHOLD = 0.1
 
 DF_MSEP = pl.read_parquet(
@@ -281,7 +281,12 @@ def test_faithfulness(df, df_msep, antijoin_df=None):
         result_df = result_df.join(antijoin_df, on=['ord', 'X', 'Y', 'S'], how='anti')
 
     faithful_df = result_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='inner', coalesce=True)
-    is_faithful = faithful_df.select(faithful_count=(pl.col('indep') == pl.col('MSep')))['faithful_count'].sum() == len(faithful_df)
+    faithful_df = faithful_df.with_columns(is_faithful=(pl.col('indep') == pl.col('MSep')))
+    if len(_temp:=faithful_df.filter(~pl.col('is_faithful')))>0:
+        print(_temp)
+    is_faithful = faithful_df['is_faithful'].sum() == len(faithful_df)
+
+
     return is_faithful, result_df
 
 def split_data(df, splits):
@@ -293,6 +298,7 @@ def split_data(df, splits):
         return dfs
 
     for split in splits:
+        print('SPLIT',split)
         _dfs = []
         for i in range(1,len(split)+1):
             from_idx = int(sum(split[:i-1])/sum(split) * len(df))
@@ -305,6 +311,10 @@ def split_data(df, splits):
                 df_i = df_i.select(partition_2_labels)
             _dfs.append(df_i)
 
+        # A indep of C given B
+
+
+        # TODO: for one particular test, it needs to fail in all clients
         all_partitions_faithful = True
         for df_i in _dfs:
             is_faithful, _ = test_faithfulness(df_i, DF_MSEP)
@@ -330,10 +340,10 @@ for seed in SEEDS:
         dfs = split_data(df, SPLITS)
 
         if len(dfs) == 0:
-            print(f'... No faithful data found. Skipping...')
+            print(f'... No suitable data found. Skipping...')
             continue
 
-        print(f'Found faithful data for {num_samples} samples and seed {seed}: {len(dfs)}')
+        print(f'Found suitable data: {len(dfs)}')
         with open('./faithful_finds.csv', 'a') as f:
             f.write(f'{num_samples},{seed},{SPLITS}')
 
@@ -347,13 +357,18 @@ for seed in SEEDS:
 
             result_fci, result_fisher, result_fedci = test_results
 
-            if len(result_fisher[0]) != 1 or len(result_fedci[0]) != 1:
-                print(f'... Fisher got {len(result_fisher[0])} results, Fedci got {len(result_fedci[0])} results. Skipping...')
+            # if len(result_fisher[0]) != 1 or len(result_fedci[0]) != 1:
+            #     print(f'... Fisher got {len(result_fisher[0])} results, Fedci got {len(result_fedci[0])} results. Skipping...')
+            #     continue
+            if len(result_fisher[0]) == 1 or len(result_fedci[0]) != 1:
+                print(f'... Fisher got {len(result_fisher[0])} results. Fedci got {len(result_fedci[0])} results. Skipping...')
                 continue
 
-            if np.array_equal(np.array(result_fisher[0][0]), np.array(result_fedci[0][0])):
-                print('... Fisher and Fedci got same result. Skipping...')
-                continue
+            # TODO: make sure to have flag for true_pag_found
+
+            # if np.array_equal(np.array(result_fisher[0][0]), np.array(result_fedci[0][0])):
+            #     print('... Fisher and Fedci got same result. Skipping...')
+            #     continue
 
             print('!!! Found differing PAGs')
             for i, (_split, (fci_adj_mat, fci_labels)) in enumerate(zip(split,result_fci), start=1):
