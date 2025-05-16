@@ -35,8 +35,8 @@ get_data_f = ro.globalenv['get_data_for_single_pag']
 
 ALPHA = 0.05
 NUM_SAMPLES = [5_000, 7500, 10_000]
-SPLITS = [[1,1], [2,1], [1,2], [3,1], [1,3], [4,1], [1,4], [1,1,1,1], [2,2,1,1]]
-SEEDS = [x+200_499 for x in range(100_000)]
+SPLITS = [[1,1], [2,1], [1,2], [3,1], [1,3], [4,1], [1,4]]#, [1,1,1,1], [2,2,1,1]]
+SEEDS = [x+200_800 for x in range(100_000)]
 COEF_THRESHOLD = 0.1
 
 DF_MSEP = pl.read_parquet(
@@ -64,6 +64,7 @@ graph_dir = 'experiments/graphs'
 
 partition_1_labels = ['A', 'C', 'D', 'E']
 partition_2_labels = ['A', 'B', 'C', 'E']
+all_labels = sorted(list(set(partition_1_labels)|set(partition_2_labels)))
 intersection_labels = sorted(list(set(partition_1_labels)&set(partition_2_labels)))
 
 
@@ -256,9 +257,6 @@ def data2graph(data, labels):
 
 def save_graph(graph, identifier, filename):
     png_bytes = graph.pipe(format='png')
-    if not os.path.exists(f'{graph_dir}/{identifier}'):
-        os.makedirs(f'{graph_dir}/{identifier}')
-    # Optionally, save manually without the .gv
     with open(f'{graph_dir}/{identifier}/{filename}.png', 'wb') as f:
         f.write(png_bytes)
 
@@ -306,7 +304,7 @@ def split_data(df, splits):
         all_partitions_faithful = True
         faithfulness_dfs = []
         for i, df_i in enumerate(_dfs, start=1):
-            is_faithful, _, faithfulness_df = test_faithfulness(df_i, DF_MSEP)
+            is_faithful, _, faithfulness_df = test_faithfulness(df_i.select(intersection_labels), DF_MSEP)
             faithfulness_dfs.append(faithfulness_df.filter(~pl.col('is_faithful')).select('ord', 'X', 'Y', 'S', client_number=pl.lit(i), split_portion=pl.lit(split[i-1])))
             all_partitions_faithful = all_partitions_faithful and is_faithful
         if all_partitions_faithful:
@@ -350,15 +348,33 @@ for seed in SEEDS:
             # if len(result_fisher[0]) != 1 or len(result_fedci[0]) != 1:
             #     print(f'... Fisher got {len(result_fisher[0])} results, Fedci got {len(result_fedci[0])} results. Skipping...')
             #     continue
+
+            # if (len(result_fisher[0]) == 1 or len(result_fedci[0]) != 1) and not (len(result_fisher[0]) == 1 and len(result_fedci[0]) == 0):
+            #     print(f'... Fisher got {len(result_fisher[0])} results. Fedci got {len(result_fedci[0])} results. Skipping...')
+            #     continue
+            # if len(result_fisher[0]) == 1 and len(result_fedci[0]) == 0:
+            #     identifier += '-BAD'
+            # else:
+            #     if not np.array_equal(np.array(result_fedci[0]), TRUE_PAG):
+            #         print(f'... Fedci is wrong. Skipping...')
+            #         continue
+
             if len(result_fisher[0]) == 1 or len(result_fedci[0]) != 1:
                 print(f'... Fisher got {len(result_fisher[0])} results. Fedci got {len(result_fedci[0])} results. Skipping...')
                 continue
 
-            if not np.array_equal(np.array(result_fedci[0]), TRUE_PAG):
+            perm = [all_labels.index(col) for col in result_fedci[1][0]]
+            pred_pag = np.array(result_fedci[0][0])[:, perm][perm, :]
+
+            if not np.array_equal(pred_pag, TRUE_PAG):
                 print(f'... Fedci is wrong. Skipping...')
                 continue
 
             print('!!! Found differing PAGs')
+
+            if not os.path.exists(f'{graph_dir}/{identifier}'):
+                os.makedirs(f'{graph_dir}/{identifier}')
+
             _faithfulness_df.write_ndjson(f'{graph_dir}/{identifier}/faithfulness.ndjson')
             for i, _df in enumerate(_dfs, start=1):
                 _df.write_parquet(f'{graph_dir}/{identifier}/data-{i}.parquet')
