@@ -61,18 +61,6 @@ TRUE_PAG = np.array([
 ])
 
 graph_dir = 'experiments/graphs'
-data_dir = 'experiments/datasets/data_slides'
-#target_id = '1747098690714-slides-4000-g'
-
-#target_id = '1746980535602-slides-8000-g'
-#target_id = '1747095310771-slides-4000-g'
-#target_id = '1747098690714-slides-4000-g'
-#target_id = '1747157391970-slides-4000-g'
-target_id = '1747234664372-slides-4000-g'
-
-
-pvalue_results_dir = 'experiments/simulation/slides'
-target_ids = [target_id]
 
 partition_1_labels = ['A', 'C', 'D', 'E']
 partition_2_labels = ['A', 'B', 'C', 'E']
