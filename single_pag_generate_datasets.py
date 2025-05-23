@@ -544,7 +544,7 @@ def generate_dataset(setup):
 #pl.Config.set_tbl_rows(20)
 
 
-num_samples_options = [4_000]
+num_samples_options = [4_000]#[4_000, 6_000, 8_000, 10_000]
 
 
 configurations = [(data_dir, data_file_pattern, c) for c in num_samples_options]

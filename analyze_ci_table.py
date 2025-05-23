@@ -3,6 +3,10 @@ import polars.selectors as cs
 
 import os
 
+#target_folder = 'ci_table'
+target_folder = 'ci_table_slides_pag'
+#target_folder = 'ci_table_single_dataset'
+
 #dir = 'experiments/simulation/results7'
 dir = 'experiments/simulation/slides'
 #dir = 'experiments/simulation/single_data' # USE SINGLE DATA TO PLOT DIFF TO REAL P VALUE
@@ -12,15 +16,6 @@ dir = 'experiments/simulation/slides'
 
 files = os.listdir(dir)
 
-# files_by_type = {}
-# for f in files:
-#     print(f)
-#     faithfulness_type = f.split('-')[-2]
-#     if faithfulness_type not in files_by_type:
-#         files_by_type[faithfulness_type] = []
-#     files_by_type[faithfulness_type].append(dir+f)
-#files_faithful = [dir+f for f in files if '-g-' in f]
-#files_unfaithful = [dir+f for f in files if '-g-' not in f]
 
 #print(len(files_faithful), len(files_unfaithful))
 
@@ -59,14 +54,18 @@ df = df.with_columns(num_splits=pl.col('split_sizes').list.len())
 
 print('Num unique pags used', df['pag_id'].n_unique())
 
+print(df['num_samples'].unique())
+print(df['num_splits'].unique())
+
 faithfulness_filter = None#'g'
 #faithfulness_filter = 'g'
 #faithfulness_filter = 'l'
 #faithfulness_filter = 'gl'
 #faithfulness_filter = 'n'
 
-df = df.filter(pl.col('num_samples') == 4000)
+# 4k, 4 splits for slides pag
 
+df = df.filter(pl.col('num_samples') == 4000)
 df = df.filter(pl.col('num_splits') == 4)
 #df = df.filter(pl.col('split_sizes').list.max() == 4)
 
@@ -136,10 +135,12 @@ plt.rcParams.update({
 
 hvplot.extension('matplotlib')
 
+diagonal = hv.Curve([(0, 0), (1, 1)]).opts(linestyle='dotted', color='black', alpha=0.5)
+
 print('=== Now plotting scatter of pvalues')
 
 _df = df.filter(pl.col('MSep'))
-_df = _df.sample(min(len(_df), 200))
+_df = _df.sample(min(len(_df), 2000))
 
 _df = _df.rename({
     'pvalue_fedci': 'Federated',
@@ -165,11 +166,11 @@ plot = _df.hvplot.scatter(
     #title=f'{"Client" if i == 1 else "Clients"}'
 )
 
-_render =  hv.render(plot, backend='matplotlib')
-_render.savefig(f'images/ci_table/scatter-indep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+_render =  hv.render(plot*diagonal, backend='matplotlib')
+_render.savefig(f'images/{target_folder}/scatter-indep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 _df = df.filter(~pl.col('MSep'))
-#_df = _df.sample(min(len(_df), 2000))
+_df = _df.sample(min(len(_df), 2000))
 
 _df = _df.rename({
     'pvalue_fedci': 'Federated',
@@ -195,12 +196,18 @@ plot = _df.hvplot.scatter(
     #title=f'{"Client" if i == 1 else "Clients"}'
 )
 
-_render =  hv.render(plot, backend='matplotlib')
-_render.savefig(f'images/ci_table/scatter-dep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+_render =  hv.render(plot*diagonal, backend='matplotlib')
+_render.savefig(f'images/{target_folder}/scatter-dep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 
 _df = df
-#_df = _df.sample(min(len(_df), 2000))
+_df1 = _df.filter(pl.col('MSep'))
+_df1 = _df1.sample(min(len(_df1), 500))
+
+_df2 = _df.filter(~pl.col('MSep'))
+_df2 = _df2.sample(min(len(_df2), 500))
+
+_df = pl.concat([_df1, _df2])
 
 _df = _df.rename({
     'pvalue_fedci': 'Federated',
@@ -218,7 +225,7 @@ plot = _df.hvplot.scatter(
     #by='Method',
     legend='bottom_right',
     #backend='matplotlib',
-    s=4000,
+    #s=4000,
     xlabel=r'Baseline p-value',  # LaTeX-escaped #
     ylabel=r'Predicted p-value',
     marker=['v', '^'],
@@ -226,8 +233,8 @@ plot = _df.hvplot.scatter(
     #title=f'{"Client" if i == 1 else "Clients"}'
 )
 
-_render =  hv.render(plot, backend='matplotlib')
-_render.savefig(f'images/ci_table/scatter-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+_render =  hv.render(plot*diagonal, backend='matplotlib')
+_render.savefig(f'images/{target_folder}/scatter-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 
 ###
@@ -243,7 +250,7 @@ plot = _df.hvplot.scatter(
     #by='Method',
     legend='bottom_right',
     #backend='matplotlib',
-    s=4000,
+    #s=4000,
     xlabel=r'Federated p-value',  # LaTeX-escaped #
     ylabel=r'Meta-Analysis p-value',
     #marker=['v', '^'],
@@ -251,8 +258,8 @@ plot = _df.hvplot.scatter(
     #title=f'{"Client" if i == 1 else "Clients"}'
 )
 
-_render =  hv.render(plot, backend='matplotlib')
-_render.savefig(f'images/ci_table/scatter-fedci-v-fisher-dependent-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+_render =  hv.render(plot*diagonal, backend='matplotlib')
+_render.savefig(f'images/{target_folder}/scatter-fedci-v-fisher-dependent-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 plot = _df.hvplot.scatter(
     x='Federated',
@@ -266,7 +273,7 @@ plot = _df.hvplot.scatter(
     #by='Method',
     legend='top_left',
     #backend='matplotlib',
-    s=4000,
+    #s=4000,
     xlabel=r'Federated p-value',  # LaTeX-escaped #
     ylabel=r'Meta-Analysis p-value',
     #marker=['v', '^'],
@@ -274,8 +281,8 @@ plot = _df.hvplot.scatter(
     #title=f'{"Client" if i == 1 else "Clients"}'
 )
 
-_render =  hv.render(plot, backend='matplotlib')
-_render.savefig(f'images/ci_table/scatter-fedci-v-fisher-independent-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+_render =  hv.render(plot*diagonal, backend='matplotlib')
+_render.savefig(f'images/{target_folder}/scatter-fedci-v-fisher-independent-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 
 
@@ -284,15 +291,15 @@ _df = df.with_columns(
     confusion_value=pl.when(
         pl.col('correct_fisher') & pl.col('correct_fedci')
     ).then(
-        pl.lit('Correct')
+        pl.lit('Both Correct')
     ).when(
         ~pl.col('correct_fisher') & pl.col('correct_fedci')
     ).then(
-        pl.lit('Fisher Incorrect')
+        pl.lit('MA Incorrect')
     ).when(
         pl.col('correct_fisher') & ~pl.col('correct_fedci')
     ).then(
-        pl.lit('Fedci Incorrect')
+        pl.lit('F Incorrect')
     ).otherwise(
         pl.lit('Both Incorrect')
     )
@@ -302,6 +309,79 @@ _df = _df.rename({
     'pvalue_fedci': 'Federated',
     'pvalue_fisher': 'Meta-Analysis',
 })
+
+color_mapping = {
+    'Both Correct': '#2ca02c',#'green',
+    'MA Incorrect': '#ff7f0e',#'orange',
+    'F Incorrect': '#1f77b4',#'blue',
+    'Both Incorrect': '#d62728'#'red'
+}
+
+_df = _df.with_columns(color=pl.col('confusion_value').replace_strict(color_mapping))
+
+
+magni1 = hv.Curve([(-0.01, 0.11), (0.11, 0.11)]).opts(linestyle='solid', color='black', alpha=0.8)
+magni2 = hv.Curve([(0.11, -0.01), (0.11, 0.11)]).opts(linestyle='solid', color='black', alpha=0.8)
+magni3 = hv.Curve([(-0.01, -0.01), (-0.01, 0.11)]).opts(linestyle='solid', color='black', alpha=0.8)
+magni4 = hv.Curve([(-0.01, -0.01), (0.11, -0.01)]).opts(linestyle='solid', color='black', alpha=0.8)
+
+
+plot = _df.sort('confusion_value').hvplot.scatter(
+    x='Federated',
+    y='Meta-Analysis',
+    by='confusion_value',
+    color='color',
+    alpha=0.7,
+    ylim=(-0.01,1.01),
+    xlim=(-0.01,1.01),
+    width=400,
+    height=400,
+    #by='Method',
+    legend='top_left',
+    #backend='matplotlib',
+    #s=4000,
+    xlabel=r'Federated p-value',  # LaTeX-escaped #
+    ylabel=r'Meta-Analysis p-value',
+    marker=['+', 'x', '^', 'v'],
+    #linestyle=['dashed', 'dotted']
+    #title=f'{"Client" if i == 1 else "Clients"}'
+)
+
+_render =  hv.render(plot*magni1*magni2*magni3*magni4, backend='matplotlib')
+_render.savefig(f'images/{target_folder}/scatter-fedci-v-fisher-colored-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+
+__df = _df.filter((pl.col('Federated')<=0.1) & (pl.col('Meta-Analysis')<=0.1))
+
+plot = __df.sort('confusion_value').hvplot.scatter(
+    x='Federated',
+    y='Meta-Analysis',
+    by='confusion_value',
+    color='color',
+    alpha=0.7,
+    ylim=(-0.01,0.101),
+    xlim=(-0.01,0.101),
+    width=400,
+    height=400,
+    #by='Method',
+    legend='top_right',
+    #backend='matplotlib',
+    #s=4000,
+    xlabel=r'Federated p-value',  # LaTeX-escaped #
+    ylabel=r'Meta-Analysis p-value',
+    marker=['+', 'x', '^', 'v'],
+    #linestyle=['dashed', 'dotted']
+    #title=f'{"Client" if i == 1 else "Clients"}'
+)
+
+_render =  hv.render(plot, backend='matplotlib')
+_render.savefig(f'images/{target_folder}/scatter-fedci-v-fisher-colored-small-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+
+
+import numpy as np
+max_bins = 20
+#binning = [b/max_bins for b in range(1,max_bins+1)]
+
+_df = _df.filter(pl.col('correct_fisher') != pl.col('correct_fedci'))
 
 plot = _df.hvplot.scatter(
     x='Federated',
@@ -315,7 +395,7 @@ plot = _df.hvplot.scatter(
     #by='Method',
     legend='top_left',
     #backend='matplotlib',
-    s=4000,
+    #s=4000,
     xlabel=r'Federated p-value',  # LaTeX-escaped #
     ylabel=r'Meta-Analysis p-value',
     #marker=['v', '^'],
@@ -324,8 +404,36 @@ plot = _df.hvplot.scatter(
 )
 
 _render =  hv.render(plot, backend='matplotlib')
-_render.savefig(f'images/ci_table/scatter-fedci-v-fisher-colored-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+_render.savefig(f'images/{target_folder}/scatter-fedci-v-fisher-mismatches-colored-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
+
+_df = _df.with_columns(
+    xcoord=((pl.col('Federated')*max_bins).cast(pl.Int32)+1)/max_bins,
+    ycoord=((pl.col('Meta-Analysis')*max_bins).cast(pl.Int32)+1)/max_bins
+)
+
+_df = _df.group_by('xcoord', 'ycoord').len()
+
+base_coords = np.linspace(0,1,max_bins+1)[1:]
+base_coords = [(x0, y0) for x0 in base_coords for y0 in base_coords]
+xcoord, ycoord = zip(*base_coords)
+base_df = pl.DataFrame({'xcoord': xcoord, 'ycoord': ycoord})
+_df = base_df.join(_df, on=['xcoord', 'ycoord'], how='left').with_columns(pl.col('len').fill_null(0))
+
+plot = _df.hvplot.heatmap(
+    x='xcoord',
+    y='ycoord',
+    C='len',
+    cmap='viridis',
+    #xlim=(0,1),
+    #ylim=(0,1),
+    width=400,
+    height=400,
+
+).opts(show_values=False, aspect='equal', xlim=(0,0.1), ylim=(0,0.1))
+
+_render =  hv.render(plot, backend='matplotlib')
+_render.savefig(f'images/{target_folder}/hist2d-fedci-v-fisher-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 
 print('=== Now calculating correlation of pvalues')
@@ -410,8 +518,8 @@ plot = _df.sort('test_id', 'Method').hvplot.box(
     showfliers=False
 )
 
-_render =  hv.render(plot, backend='matplotlib')
-_render.savefig(f'images/ci_table/pval_diff_box-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+#_render =  hv.render(plot, backend='matplotlib')
+#_render.savefig(f'images/ci_table/pval_diff_box-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 
 _df = df.filter(~pl.col('MSep'))
@@ -444,8 +552,8 @@ plot = _df.hvplot.box(
     showfliers=False
 )
 
-_render =  hv.render(plot, backend='matplotlib')
-_render.savefig(f'images/ci_table/pval_diff_box_dep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+#_render =  hv.render(plot, backend='matplotlib')
+#_render.savefig(f'images/ci_table/pval_diff_box_dep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 
 
@@ -464,8 +572,8 @@ plot = _df.hvplot.box(
     showfliers=False
 )
 
-_render =  hv.render(plot, backend='matplotlib')
-_render.savefig(f'images/ci_table/pval_diff_box_indep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+#_render =  hv.render(plot, backend='matplotlib')
+#_render.savefig(f'images/ci_table/pval_diff_box_indep-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 
 ###

@@ -200,8 +200,6 @@ class LikelihoodRatioTest():
         t0_dof = t0.get_degrees_of_freedom()
         t1_dof = t1.get_degrees_of_freedom()
 
-        #print('T')
-
         p_val = scipy.stats.chi2.sf(2*(t1_llf - t0_llf), t1_dof-t0_dof)
 
         if DEBUG >= 2:
@@ -249,6 +247,7 @@ class SymmetricLikelihoodRatioTest():
         self.conditioning_set = sorted(lrt0.s_labels)
 
         self.p_val = min(2*min(self.lrt0.p_val, self.lrt1.p_val), max(self.lrt0.p_val, self.lrt1.p_val))
+
         if DEBUG >= 2:
             print(f'*** Combining p values for symmetry of tests between {self.v0} and {self.v1} given {self.conditioning_set}')
             print(f'p value {self.lrt0.y_label}: {self.lrt0.p_val}')
@@ -396,7 +395,6 @@ class TestEngine():
                 return
             current_test = self.tests[self.current_test_index]
 
-
     def remove_current_test(self):
         if self.is_finished():
             return
@@ -451,24 +449,29 @@ class TestEnginePrecise(TestEngine):
 
         self.required_tests = {}
 
-        variable_availability = {}
-        for c, _schema in client_schemas.items():
-            for v in _schema:
-                variable_availability[v] = variable_availability.get(v, set([])) | {c}
-
         variables = set(schema.keys())
         max_conditioning_set_size = min(len(variables)-1, max_regressors) if max_regressors is not None else len(variables)-1
 
-        all_test_targets = set(sum([(a,b) for a,b,_ in test_targets], ())) if test_targets is not None else None
+        def get_possible_tests(clients):
+            possible_tests = []
 
-        for y_var in variables:
-            variables_without_y = variables - {y_var}
-            for x_var in variables_without_y:
-                set_of_possible_regressors = variables_without_y - {x_var}
-                powerset_of_regressors = chain.from_iterable(combinations(set_of_possible_regressors, r) for r in range(0, max_conditioning_set_size+1))
-                for cond_set in powerset_of_regressors:
-                    cond_set = tuple(sorted(list(cond_set)))
-                    self.required_tests[(y_var, cond_set)] = self.required_tests.get((y_var, cond_set), []) + [x_var]
+            variables = [set(client_schemas[c].keys()) for c in clients]
+            common_variables = set.intersection(*variables)
+
+            for y_var in common_variables:
+                variables_without_y = common_variables - {y_var}
+                for x_var in variables_without_y:
+                    set_of_possible_regressors = variables_without_y - {x_var}
+                    powerset_of_regressors = chain.from_iterable(combinations(set_of_possible_regressors, r) for r in range(0, max_conditioning_set_size+1))
+                    for cond_set in powerset_of_regressors:
+                        cond_set = tuple(sorted(list(cond_set)))
+                        possible_tests.append((y_var, x_var, cond_set))
+            return possible_tests
+
+        powerset_of_clients = chain.from_iterable(combinations(client_schemas.keys(), r) for r in range(1, len(client_schemas)+1))
+
+        possible_tests = [get_possible_tests(clients) for clients in powerset_of_clients]
+        possible_tests = list(set(chain.from_iterable(possible_tests)))
 
         def expand_variable(var, category_expressions, ordinal_expressions):
             res = []
@@ -481,8 +484,8 @@ class TestEnginePrecise(TestEngine):
             return res
 
         self.required_test_pairs = {}
-        for req_test, x_vars in self.required_tests.items():
-            y_var, cond_set = req_test
+        for possible_test in possible_tests:
+            y_var, x_var, cond_set = possible_test
 
             base_cond_set = []
             for cond_var in cond_set:
@@ -499,39 +502,31 @@ class TestEnginePrecise(TestEngine):
             else:
                 raise Exception(f'Unknown variable type {schema[y_var]} encountered!')
 
-            base_potential_clients = [variable_availability[v] for v in [y_var]+list(cond_set)]
-            base_potential_clients = set.intersection(*base_potential_clients)
-            for x_var in x_vars:
-                potential_clients = base_potential_clients & variable_availability[x_var]
-                if len(potential_clients) == 0:
-                    continue
+            full_cond_set = base_cond_set + expand_variable(x_var, category_expressions, ordinal_expressions)
+            required_labels = set([x_var] + [y_var] + list(cond_set))
 
-                full_cond_set = base_cond_set + expand_variable(x_var, category_expressions, ordinal_expressions)
-                required_labels = set([x_var] + [y_var] + list(cond_set))
-
-                self.required_test_pairs[(y_var, x_var, cond_set)] = (
-                    Test(
-                        y_label=y_var,
-                        X_labels=sorted(list(full_cond_set)),
-                        y_labels=expression_values,
-                        max_iterations=max_iterations,
-                        y_type=schema[y_var],
-                        required_labels=required_labels
-                    ),
-                    Test(
-                        y_label=y_var,
-                        X_labels=sorted(list(base_cond_set)),
-                        y_labels=expression_values,
-                        max_iterations=max_iterations,
-                        y_type=schema[y_var],
-                        required_labels=required_labels
-                    )
+            self.required_test_pairs[(y_var, x_var, cond_set)] = (
+                Test(
+                    y_label=y_var,
+                    X_labels=sorted(list(full_cond_set)),
+                    y_labels=expression_values,
+                    max_iterations=max_iterations,
+                    y_type=schema[y_var],
+                    required_labels=required_labels
+                ),
+                Test(
+                    y_label=y_var,
+                    X_labels=sorted(list(base_cond_set)),
+                    y_labels=expression_values,
+                    max_iterations=max_iterations,
+                    y_type=schema[y_var],
+                    required_labels=required_labels
                 )
+            )
         self.tests = []
         for (t0, t1) in self.required_test_pairs.values():
             self.tests.append(t0)
             self.tests.append(t1)
-
         self.tests: List[Test] = sorted(self.tests)
         self.current_test_index = 0
 

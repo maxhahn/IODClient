@@ -52,7 +52,7 @@ three_tail_pags = [t-1 for t in three_tail_pags]
 df = df.with_columns(
     faithfulness=pl.col('filename').str.split('-').list.get(-3),
     num_samples=pl.col('filename').str.split('-').list.get(2).cast(pl.Int32),
-    split_sizes=pl.col('filename').str.split('(').list.get(1).str.split(')').list.get(0).str.split('_').cast(pl.List(pl.Int32)),
+    split_sizes=pl.col('filename').str.split('-(').list.get(1).str.split(')-').list.get(0).str.replace_all('(|)', '').str.split('_').cast(pl.List(pl.Int32)),
     pag_id=pl.col('filename').str.split('-').list.get(1)#.cast(pl.Int32)
 )
 df = df.with_columns(num_splits=pl.col('split_sizes').list.len())
@@ -65,9 +65,13 @@ faithfulness_filter = None#'g'
 #faithfulness_filter = 'gl'
 #faithfulness_filter = 'n'
 
-df = df.filter(pl.col('num_samples') == 8000)
+print(df.group_by('num_splits','num_samples').len())
 
-df = df.filter(pl.col('num_splits') == 6)
+
+#df = df.filter(~(pl.col('X')+pl.col('Y')+pl.col('S')).str.contains_any(['B', 'D']))
+
+#df = df.filter(pl.col('num_samples') == 4000)
+#df = df.filter(pl.col('num_splits') == 2)
 #df = df.filter(pl.col('split_sizes').list.max() == 4)
 
 if faithfulness_filter is None:
@@ -119,7 +123,7 @@ print(df.group_by('ord', 'X', 'Y', 'S', 'MSep').agg(pl.col('correct_fedci', 'cor
 # - difference between fisher/fedci to pooled as boxplot
 # Do visualizations for MSep = True / MSep = False (or use indep_pooled)
 #
-print(df.select(pl.col('pvalue_diff_fisher_pooled', 'pvalue_diff_fedci_pooled').min().name.suffix('_MIN'), pl.col('pvalue_diff_fisher_pooled', 'pvalue_diff_fedci_pooled').max().name.suffix('_MAX')))
+print(df.select(pl.col('pvalue_diff_fisher_pooled', 'pvalue_diff_fedci_pooled').abs().min().name.suffix('_MIN'), pl.col('pvalue_diff_fisher_pooled', 'pvalue_diff_fedci_pooled').abs().max().name.suffix('_MAX')))
 
 import hvplot
 import hvplot.polars
@@ -138,7 +142,7 @@ _df = _df.with_columns(
     max_pvalue_diff=pl.max_horizontal(pl.col('pvalue_diff_fisher_pooled').abs(), pl.col('pvalue_diff_fedci_pooled').abs())
 )
 _df = _df.with_columns(
-    max_pvalue_diff_per_test=pl.max('max_pvalue_diff').over('ord', 'X', 'Y', 'S')
+    max_pvalue_diff_per_test=pl.max('max_pvalue_diff').over('num_samples', 'num_splits', 'ord', 'X', 'Y', 'S')
 )
 _df = _df.with_columns(
     adjusted_pvalue_diff_fisher=pl.col('pvalue_diff_fisher_pooled')/pl.col('max_pvalue_diff_per_test'),
@@ -155,30 +159,128 @@ _df = _df.rename({
     'adjusted_pvalue_diff_fisher': 'Meta-Analysis',
 })
 
-plot = _df.hvplot.box(
-    #y='p-value Difference',# 'Meta-Analysis'],
-    y=['Federated', 'Meta-Analysis'],
-    #y='Meta-Analysis',# 'Meta-Analysis'],
-    #by=['test_id', 'Method'],
-    ylabel='Normalized Difference in p-value',
-    xlabel='Method',
-    #ylim=(-0.1,1.1),
-    showfliers=False
+
+_df = _df.unpivot(
+    on=['Federated', 'Meta-Analysis'],
+    index=['num_samples', 'num_splits', 'split_sizes'],
+    value_name='p-value Difference',
+    variable_name='Method'
 )
 
-_render =  hv.render(plot, backend='matplotlib')
-_render.savefig(f'images/ci_table/pval_adjusted_diff_to_pooled_box-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+_df = _df.with_columns(pl.col('Method').replace_strict({
+    'Federated': 'F',
+    'Meta-Analysis': 'MA'
+}))
 
-plot = _df.hvplot.box(
-    #y='p-value Difference',# 'Meta-Analysis'],
-    y=['Federated', 'Meta-Analysis'],
-    #y='Meta-Analysis',# 'Meta-Analysis'],
-    #by=['test_id', 'Method'],
-    ylabel='Normalized Difference in p-value',
-    xlabel='Method',
-    #ylim=(-0.1,1.1),
-    #showfliers=False
-)
+_df = _df.sort('Method', 'num_samples', 'num_splits')
 
-_render =  hv.render(plot, backend='matplotlib')
-_render.savefig(f'images/ci_table/pval_adjusted_diff_to_pooled_box-fliers-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+for nsamples in df['num_samples'].unique().to_list():
+
+    __df = _df.filter(pl.col('num_samples')==nsamples)
+
+    plot = __df.hvplot.box(
+        #y='p-value Difference',# 'Meta-Analysis'],
+        y='p-value Difference',
+        by=['Method', 'num_splits'],
+        #y='Meta-Analysis',# 'Meta-Analysis'],
+        #by=['test_id', 'Method'],
+        ylabel='Normalized Difference in p-value',
+        xlabel='Method, # Partitions',
+        ylim=(-1,1),
+        showfliers=False
+    )
+
+    _render =  hv.render(plot, backend='matplotlib')
+    _render.savefig(f'images/pval_diff/pval_adjusted_diff_to_pooled_box_by_splits-{nsamples}samples-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+
+    plot = __df.hvplot.box(
+        #y='p-value Difference',# 'Meta-Analysis'],
+        #y=['Federated', 'Meta-Analysis'],
+        y='p-value Difference',
+        by=['Method', 'num_splits'],
+        #y='Meta-Analysis',# 'Meta-Analysis'],
+        #by=['test_id', 'Method'],
+        ylabel='Normalized Difference in p-value',
+        xlabel='Method, # Partitions',
+        ylim=(-1,1),
+        #showfliers=False
+    )
+
+    _render =  hv.render(plot, backend='matplotlib')
+    _render.savefig(f'images/pval_diff/pval_adjusted_diff_to_pooled_box_by_splits-fliers-{nsamples}samples-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+
+for nparts in df['num_splits'].unique().to_list():
+
+    __df = _df.filter(pl.col('num_splits')==nparts)
+
+    plot = __df.hvplot.box(
+        #y='p-value Difference',# 'Meta-Analysis'],
+        y='p-value Difference',
+        by=['Method', 'num_samples'],
+        #y='Meta-Analysis',# 'Meta-Analysis'],
+        #by=['test_id', 'Method'],
+        ylabel='Normalized Difference in p-value',
+        xlabel='Method, # Samples',
+        ylim=(-1,1),
+        showfliers=False
+    )
+
+    _render =  hv.render(plot, backend='matplotlib')
+    _render.savefig(f'images/pval_diff/pval_adjusted_diff_to_pooled_box_by_samples-{nparts}parts-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+
+    plot = __df.hvplot.box(
+        #y='p-value Difference',# 'Meta-Analysis'],
+        #y=['Federated', 'Meta-Analysis'],
+        y='p-value Difference',
+        by=['Method', 'num_samples'],
+        #y='Meta-Analysis',# 'Meta-Analysis'],
+        #by=['test_id', 'Method'],
+        ylabel='Normalized Difference in p-value',
+        xlabel='Method, # Samples',
+        ylim=(-1,1),
+        #showfliers=False
+    )
+
+    _render =  hv.render(plot, backend='matplotlib')
+    _render.savefig(f'images/pval_diff/pval_adjusted_diff_to_pooled_box_by_samples-fliers-{nparts}parts-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+
+
+
+# __df = _df
+# __df = __df.filter(pl.col('num_splits') == 4)
+# __df = __df.filter(pl.col('num_samples') == 4000)
+# __df = __df.with_columns(max_split=pl.col('split_sizes').list.max())
+# __df = __df.sort('Method', 'max_split')
+
+# #__df = _df.filter(pl.col('num_splits')==nparts)
+
+# plot = __df.hvplot.box(
+#     #y='p-value Difference',# 'Meta-Analysis'],
+#     y='p-value Difference',
+#     by=['Method', 'max_split'],
+#     #y='Meta-Analysis',# 'Meta-Analysis'],
+#     #by=['test_id', 'Method'],
+#     ylabel='Normalized Difference in p-value',
+#     xlabel='Method, Splitratio',
+#     ylim=(-1,1),
+#     showfliers=False
+# )
+
+# _render =  hv.render(plot, backend='matplotlib')
+# _render.savefig(f'images/pval_diff/pval_adjusted_diff_to_pooled_box_by_split_ratio-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
+
+# plot = __df.hvplot.box(
+#     #y='p-value Difference',# 'Meta-Analysis'],
+#     #y=['Federated', 'Meta-Analysis'],
+#     y='p-value Difference',
+#     by=['Method', 'max_split'],
+#     #y='Meta-Analysis',# 'Meta-Analysis'],
+#     #by=['test_id', 'Method'],
+#     ylabel='Normalized Difference in p-value',
+#     xlabel='Method, Splitratio',
+#     ylim=(-1,1),
+#     #showfliers=False
+# )
+
+# _render =  hv.render(plot, backend='matplotlib')
+# _render.savefig(f'images/pval_diff/pval_adjusted_diff_to_pooled_box_by_split_ratio-fliers-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)

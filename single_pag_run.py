@@ -35,8 +35,8 @@ get_data_f = ro.globalenv['get_data_for_single_pag']
 
 ALPHA = 0.05
 NUM_SAMPLES = [5_000, 7500, 10_000]
-SPLITS = [[1,1], [2,1], [1,2], [3,1], [1,3], [4,1], [1,4]]#, [1,1,1,1], [2,2,1,1]]
-SEEDS = [x+200_800 for x in range(100_000)]
+SPLITS = [[1,1], [2,1], [1,2], [3,1], [1,3], [1,1,1,1], [2,2,1,1]]
+SEEDS = [x+202_030 for x in range(100_000)]
 COEF_THRESHOLD = 0.1
 
 DF_MSEP = pl.read_parquet(
@@ -256,9 +256,16 @@ def data2graph(data, labels):
     return graph
 
 def save_graph(graph, identifier, filename):
+    graph.attr(rankdir='LR') # splines='line'
+    #graph.attr('node', shape='circle', fixedsize='true', width='0.7', height='0.7')
     png_bytes = graph.pipe(format='png')
     with open(f'{graph_dir}/{identifier}/{filename}.png', 'wb') as f:
         f.write(png_bytes)
+        # Save to file
+    with open(f'{graph_dir}/{identifier}/{filename}.dot', 'w') as f:
+       f.write(graph.source)
+    #install dot2tex
+    #subprocess.run(["dot2tex", "graph.dot", "-t", "tikz", "-o", "graph.tex"])
 
 def test_faithfulness(df, df_msep, antijoin_df=None):
     result_df, result_labels = mxm_ci_test(df)
@@ -311,8 +318,8 @@ def split_data(df, splits):
             #print('...... All partitions are faithful. Skipping...')
             continue
 
-        is_faithful1 = test_faithfulness(pl.concat(_dfs[0::2]), DF_MSEP, overlap_df)
-        is_faithful2 = test_faithfulness(pl.concat(_dfs[1::2]), DF_MSEP, overlap_df)
+        is_faithful1, _, _ = test_faithfulness(pl.concat(_dfs[0::2]), DF_MSEP, overlap_df)
+        is_faithful2, _, _ = test_faithfulness(pl.concat(_dfs[1::2]), DF_MSEP, overlap_df)
 
         if not is_faithful1 or not is_faithful2:
             #print('...... Data is not faithful globally. Skipping...')
@@ -345,23 +352,15 @@ for seed in SEEDS:
 
             result_fci, result_fisher, result_fedci = test_results
 
-            # if len(result_fisher[0]) != 1 or len(result_fedci[0]) != 1:
-            #     print(f'... Fisher got {len(result_fisher[0])} results, Fedci got {len(result_fedci[0])} results. Skipping...')
-            #     continue
-
-            # if (len(result_fisher[0]) == 1 or len(result_fedci[0]) != 1) and not (len(result_fisher[0]) == 1 and len(result_fedci[0]) == 0):
-            #     print(f'... Fisher got {len(result_fisher[0])} results. Fedci got {len(result_fedci[0])} results. Skipping...')
-            #     continue
-            # if len(result_fisher[0]) == 1 and len(result_fedci[0]) == 0:
-            #     identifier += '-BAD'
-            # else:
-            #     if not np.array_equal(np.array(result_fedci[0]), TRUE_PAG):
-            #         print(f'... Fedci is wrong. Skipping...')
-            #         continue
-
             if len(result_fisher[0]) == 1 or len(result_fedci[0]) != 1:
                 print(f'... Fisher got {len(result_fisher[0])} results. Fedci got {len(result_fedci[0])} results. Skipping...')
                 continue
+
+            # if len(result_fisher[0]) == 1 and len(result_fedci[0]) != 1:
+            #     print(f'... Fisher got {len(result_fisher[0])} results. Fedci got {len(result_fedci[0])} results. Skipping...')
+            #     identifier += '-FISHER_BUT_NO_FEDCI'
+            # else:
+            #     continue
 
             perm = [all_labels.index(col) for col in result_fedci[1][0]]
             pred_pag = np.array(result_fedci[0][0])[:, perm][perm, :]
@@ -400,3 +399,8 @@ for seed in SEEDS:
                 fci_fedci_updated = (_adj_mat, _labels)
                 g_fci = data2graph(*fci_fedci_updated)
                 save_graph(g_fci, identifier, f'fci-{i}-fedci-updated')
+
+
+# TODO:
+# Write code to test SHD of existing faithful datasets by calculating np.sum(TRUTH != PREDICTION) which should be the SHD
+# Make sure to have correct variable ordering

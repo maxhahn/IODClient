@@ -479,7 +479,7 @@ def run_comparison(setup):
 
     dfs1 = []
     split_acc = 0
-    split_percs = perc_split[0::2]
+    split_percs = perc_split[0]#[0::2]
     split_percs = [s/sum(split_percs) for s in split_percs]
     for split_perc in split_percs:
         cutoff_from = int(split_acc * len(df1))
@@ -490,7 +490,7 @@ def run_comparison(setup):
 
     dfs2 = []
     split_acc = 0
-    split_percs = perc_split[1::2]
+    split_percs = perc_split[1]#[1::2]
     split_percs = [s/sum(split_percs) for s in split_percs]
     for split_perc in split_percs:
         cutoff_from = int(split_acc * len(df2))
@@ -688,12 +688,16 @@ for f in dataset_files:
     id = f.rpartition('-')[0]
     dataset_files_subset[id] = (f'{dataset_dir}/{id}-p1.parquet', f'{dataset_dir}/{id}-p2.parquet')
 
-perc_split = [1,1,1,1]
-#perc_split = [1,1,1,1,1,1]
-#perc_split = [1,1]
+#perc_split = [[1,1],[1,1]]
+#perc_split = [[10,1],[10,1]]
+perc_split = [[1,1,1],[1,1,1]]
+#perc_split = [[1],[1]]
+#perc_split = [[1,1],[1]]
+#perc_split = [[1],[1,1]]
+#perc_split = [[1,1,1],[1,1]]
 
-configurations = [(id, client_files, perc_split) for id, client_files in dataset_files_subset.items() if '-10000-' in id and '-g' == id[-2:]]#and '780-' in id and '-22-' in id ]
-configurations = [configurations[0]]*400
+configurations = [(id, client_files, perc_split) for id, client_files in dataset_files_subset.items() if '-2000-' in id and '-g' == id[-2:]]#and '780-' in id and '-22-' in id ]
+configurations = [configurations[0]]*100
 
 from tqdm.contrib.concurrent import process_map
 

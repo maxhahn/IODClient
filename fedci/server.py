@@ -62,7 +62,6 @@ class Server():
             assert len(selected_clients) > 0, f'No client is able to provide the data for {required_labels}'
 
             y_label, X_labels, beta = self.test_engine.get_current_test_parameters()
-
             results = {client_id: client.compute(y_label, X_labels, beta) for client_id, client in selected_clients.items()}
             # NOTE: fetch ClientResponseData over network if necessary
             results = {client_id: self._network_fetch_function(result) for client_id, result in results.items()}
