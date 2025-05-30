@@ -218,7 +218,7 @@ test_setups = [(pag, subset, i) for i,(pag,subset) in enumerate(zip(truePAGs, su
 #test_setups = test_setups[:1]
 
 #test_setups = test_setups[:1]
-NUM_TESTS = 1000
+NUM_TESTS = 100000
 # ls -la experiments/datasets/*/*-100000-faith.parquet | wc -l
 ALPHA = 0.05
 
@@ -282,6 +282,12 @@ split_options = [[[(1,1),(1,1)]]]#[0.1,0.5]
 #  [1]  2 16 18 19 20 23 29 31 37 42 44 53 57 58 62 64 66 69 70 72 73 74 75 79 81 82 83 84 93 98
 three_tail_pags = [2, 16, 18, 19, 20, 23, 29, 31, 37, 42, 44, 53, 57, 58, 62, 64, 66, 69, 70, 72, 73, 74, 75, 79, 81, 82, 83, 84, 93, 98]
 three_tail_pags = [t-1 for t in three_tail_pags]
+
+#three_tail_pags = [1, 41, 83, 69, 81, 19, 36]
+#three_tail_pags = [81, 1, 83, 36, 69]
+#three_tail_pags = [81, 83, 36, 69]
+#three_tail_pags = [69]
+three_tail_pags = [30, 41, 1, 81, 69, 65, 56, 92, 28, 83]
 
 test_setups = [t for t in test_setups if t[2] in three_tail_pags]
 

@@ -3,13 +3,10 @@ import polars.selectors as cs
 
 import os
 
-#target_folder = 'ci_table'
-target_folder = 'ci_table_slides_pag'
-#target_folder = 'ci_table_single_dataset'
+#dir, target_folder = 'experiments/simulation/results7', 'ci_table'
+#dir, target_folder = 'experiments/simulation/slides', 'ci_table_slides_pag'
+dir, target_folder = 'experiments/simulation/single_data', 'ci_table_single_dataset'
 
-#dir = 'experiments/simulation/results7'
-dir = 'experiments/simulation/slides'
-#dir = 'experiments/simulation/single_data' # USE SINGLE DATA TO PLOT DIFF TO REAL P VALUE
 
 #all_faithful_ids = [f.rpartition('-')[0] for f in os.listdir('experiments/datasets/f2')]
 #all_unfaithful_ids = [f.rpartition('-')[0] for f in os.listdir('experiments/datasets/uf2')]
@@ -358,8 +355,8 @@ plot = __df.sort('confusion_value').hvplot.scatter(
     by='confusion_value',
     color='color',
     alpha=0.7,
-    ylim=(-0.01,0.101),
-    xlim=(-0.01,0.101),
+    ylim=(-0.001,0.101),
+    xlim=(-0.001,0.101),
     width=400,
     height=400,
     #by='Method',

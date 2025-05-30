@@ -1,0 +1,1 @@
+{"file_id": "experiments/datasets/mixed_pag/1748009172471-65-4000-g", "num_samples": 4000, "pag_id": 65, "num_clients": 4, "fedci_shd": [0, 0], "fisher_shd": [10, 7, 11, 9, 7, 9], "oracle_num_predictions": 2, "fedci_num_predictions": 2, "fisher_num_predictions": 6}

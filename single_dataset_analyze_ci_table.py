@@ -150,14 +150,26 @@ _df = _df.with_columns(
 )
 
 
+_df = _df.with_columns(
+    logratio_fedci=pl.col('pvalue_fedci').log(10) - pl.col('pvalue_pooled').log(10),
+    logratio_fisher=pl.col('pvalue_fisher').log(10) - pl.col('pvalue_pooled').log(10)
+)
+
+
 #print(_df.select(pl.col('max_pvalue_diff').max(),pl.col('pvalue_diff_fisher_pooled', 'pvalue_diff_fedci_pooled').min().name.suffix('_MIN'), pl.col('pvalue_diff_fisher_pooled', 'pvalue_diff_fedci_pooled').max().name.suffix('_MAX')))
 #print(_df.select(pl.col('adjusted_pvalue_fisher', 'adjusted_pvalue_fedci').max().name.suffix('_MAX')))
 #print(_df.filter(pl.col('adjusted_pvalue_fisher')>1).select('adjusted_pvalue_fisher',pl.col('pvalue_diff_fisher_pooled', 'pvalue_diff_fedci_pooled')))
 
-_df = _df.rename({
-    'adjusted_pvalue_diff_fedci': 'Federated',
-    'adjusted_pvalue_diff_fisher': 'Meta-Analysis',
-})
+if False:
+    _df = _df.rename({
+        'adjusted_pvalue_diff_fedci': 'Federated',
+        'adjusted_pvalue_diff_fisher': 'Meta-Analysis',
+    })
+else:
+    _df = _df.rename({
+        'logratio_fedci': 'Federated',
+        'logratio_fisher': 'Meta-Analysis',
+    })
 
 
 _df = _df.unpivot(
@@ -184,9 +196,10 @@ for nsamples in df['num_samples'].unique().to_list():
         by=['Method', 'num_splits'],
         #y='Meta-Analysis',# 'Meta-Analysis'],
         #by=['test_id', 'Method'],
-        ylabel='Normalized Difference in p-value',
+        #ylabel='Normalized Difference in p-value',
+        ylabel='Log-ratio of p-values',
         xlabel='Method, # Partitions',
-        ylim=(-1,1),
+        #ylim=(-1,1),
         showfliers=False
     )
 
@@ -200,9 +213,10 @@ for nsamples in df['num_samples'].unique().to_list():
         by=['Method', 'num_splits'],
         #y='Meta-Analysis',# 'Meta-Analysis'],
         #by=['test_id', 'Method'],
-        ylabel='Normalized Difference in p-value',
+        #ylabel='Normalized Difference in p-value',
+        ylabel='Log-ratio of p-values',
         xlabel='Method, # Partitions',
-        ylim=(-1,1),
+        #ylim=(-1,1),
         #showfliers=False
     )
 
@@ -219,9 +233,10 @@ for nparts in df['num_splits'].unique().to_list():
         by=['Method', 'num_samples'],
         #y='Meta-Analysis',# 'Meta-Analysis'],
         #by=['test_id', 'Method'],
-        ylabel='Normalized Difference in p-value',
+        #ylabel='Normalized Difference in p-value',
+        ylabel='Log-ratio of p-values',
         xlabel='Method, # Samples',
-        ylim=(-1,1),
+        #ylim=(-1,1),
         showfliers=False
     )
 
@@ -235,9 +250,10 @@ for nparts in df['num_splits'].unique().to_list():
         by=['Method', 'num_samples'],
         #y='Meta-Analysis',# 'Meta-Analysis'],
         #by=['test_id', 'Method'],
-        ylabel='Normalized Difference in p-value',
+        #ylabel='Normalized Difference in p-value',
+        ylabel='Log-ratio of p-values',
         xlabel='Method, # Samples',
-        ylim=(-1,1),
+        #ylim=(-1,1),
         #showfliers=False
     )
 

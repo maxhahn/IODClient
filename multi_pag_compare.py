@@ -17,6 +17,7 @@ import rpy2.rinterface_lib.callbacks as cb
 cb.consolewrite_print = lambda x: None
 cb.consolewrite_warnerror = lambda x: None
 
+import json
 
 # load local-ci script
 ro.r['source']('./ci_functions.r')
@@ -33,6 +34,25 @@ truePAGs_map = {i:pag for i, pag in enumerate(truePAGs, start=0)}
 DATA_DIR = 'experiments/datasets/mixed_pag'
 ALPHA = 0.05
 PROCEDURE = 'original'
+
+LOGFILE = './mixed_pag_results.json'
+
+"""
+from collections import Counter
+import os
+DATA_DIR = 'experiments/datasets/mixed_pag'
+files = os.listdir(DATA_DIR)
+files = set([f.rpartition('-p')[0] for f in files])
+files = sorted(files)
+pagids = [f.split('-')[1] for f in files]
+
+three_tail_pags = [2, 16, 18, 19, 20, 23, 29, 31, 37, 42, 44, 53, 57, 58, 62, 64, 66, 69, 70, 72, 73, 74, 75, 79, 81, 82, 83, 84, 93, 98]
+three_tail_pags = [str(t-1) for t in three_tail_pags]
+
+print(len(three_tail_pags) - len(Counter(pagids)))
+set(three_tail_pags) - set(pagids)
+"""
+
 
 
 def mxm_ci_test(df):
@@ -187,20 +207,6 @@ def test_dataset(true_pag, true_labels, dfs, df_msep=None):
     client_labels = {id: sorted(list(schema.keys())) for id, schema in server.client_schemas.items()}
     fedci_df = server_results_to_dataframe(server, fedci_all_labels, fedci_results)
 
-    if df_msep is not None:
-        _fedci_df = fedci_df
-        label_mapping = {str(i):l for i,l in enumerate(['A', 'B', 'C', 'D', 'E'], start=1)}
-        _fedci_df = _fedci_df.with_columns(
-            pl.col('X').cast(pl.Utf8).replace(label_mapping),
-            pl.col('Y').cast(pl.Utf8).replace(label_mapping),
-            pl.col('S').str.split(',').list.eval(pl.element().replace(label_mapping)).list.sort().list.join(','),
-        )
-        test_df = _fedci_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
-        test_df = test_df.with_columns(indep=pl.col('pvalue')>ALPHA)
-        test_df = test_df.with_columns(faithful=pl.col('MSep')==pl.col('indep'))
-        print(test_df.filter(~pl.col('faithful')))
-        print(len(test_df), test_df['faithful'].sum())
-
     iod_result_fedci = run_riod(
         true_pag,
         true_labels,
@@ -211,13 +217,45 @@ def test_dataset(true_pag, true_labels, dfs, df_msep=None):
         PROCEDURE
     )
 
-    return iod_result_fisher, iod_result_fedci
+    if df_msep is not None:
+        _fedci_df = fedci_df
+        label_mapping = {str(i):l for i,l in enumerate(true_labels, start=1)}
+        _fedci_df = _fedci_df.with_columns(
+            pl.col('X').cast(pl.Utf8).replace(label_mapping),
+            pl.col('Y').cast(pl.Utf8).replace(label_mapping),
+            pl.col('S').str.split(',').list.eval(pl.element().replace(label_mapping)).list.sort().list.join(','),
+        )
+        test_df = _fedci_df.select('ord', 'X', 'Y', 'S').join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
+
+        reverse_label_mapping = {l:str(i) for i,l in enumerate(true_labels, start=1)}
+        test_df = test_df.with_columns(
+            pl.col('X').replace(reverse_label_mapping).cast(pl.Int64),
+            pl.col('Y').replace(reverse_label_mapping).cast(pl.Int64),
+            pl.col('S').str.split(',').list.eval(pl.element().replace(reverse_label_mapping)).list.sort().list.join(','),
+        )
+
+        test_df = test_df.select(
+            'ord', 'X', 'Y', 'S',
+            pvalue=pl.when(pl.col('MSep')).then(pl.lit(0.999)).otherwise(pl.lit(0.001)).cast(pl.Float64)
+        )
+
+        test_df = test_df.sort('ord', 'X', 'Y', 'S')
+        #pl.Config.set_tbl_rows(50)
+        #print(test_df)
+        #print(fedci_df.sort('ord', 'X', 'Y', 'S'))
+
+        #iod_result_oracle = run_pval_agg_iod(true_pag, true_labels, [test_df.to_pandas()], [true_labels], ALPHA, PROCEDURE)
+        #iod_result_oracle = run_riod(true_pag, true_labels, test_df.to_pandas(), true_labels, {'1': true_labels}, ALPHA, PROCEDURE)
+        iod_result_oracle = run_riod(true_pag, true_labels, test_df.to_pandas(), true_labels, {str(i):sorted(d.columns) for i,d in enumerate(dfs, start=1)}, ALPHA, PROCEDURE)
+
+        test_df = _fedci_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
+        test_df = test_df.with_columns(indep=pl.col('pvalue')>ALPHA)
+        test_df = test_df.with_columns(faithful=pl.col('MSep')==pl.col('indep')).filter(~pl.col('faithful'))
+        if len(test_df) > 0:
+            print(test_df)
 
 
-
-
-
-
+    return iod_result_fisher, iod_result_fedci, None if df_msep is None else iod_result_oracle
 
 
 files = os.listdir(DATA_DIR)
@@ -231,7 +269,7 @@ print(f'Found {len(files)} datasets')
 
 pagids = [f.split('-')[1] for f in files]
 from collections import Counter
-
+print('Diff PAGs:', len(Counter(pagids)))
 
 def test_faithfulness(df, df_msep, antijoin_df=None):
     result_df, result_labels = mxm_ci_test(df)
@@ -253,9 +291,6 @@ def test_faithfulness(df, df_msep, antijoin_df=None):
 
     return is_faithful, result_df, faithful_df
 
-
-#print(Counter(pagids))
-
 for file in files:
 
     print('Running for', file)
@@ -271,9 +306,13 @@ for file in files:
     p2_labels = dfs2[0].columns
     intersect_labels = sorted(list(set(p1_labels)&set(p2_labels)))
 
+
     pag_id = int(file.split('-')[1])
+    num_samples = int(file.split('-')[2])
     true_pag = truePAGs_map[pag_id]
     true_labels = ['A', 'B', 'C', 'D', 'E']
+    not_shared_labels = sorted(list(set(true_labels) - set(intersect_labels)))
+
     df_msep = pl.read_parquet('./experiments/pag_msep/pag-{}.parquet'.format(pag_id))
     df_msep = df_msep.with_columns(pl.col('S').list.join(','))
     df_msep = df_msep.with_columns(
@@ -285,46 +324,58 @@ for file in files:
             )
     )
 
-    test_results_fisher, test_results_fedci = test_dataset(true_pag, true_labels, dfs1+dfs2, df_msep)
+    test_results_fisher, test_results_fedci, test_results_oracle = test_dataset(true_pag, true_labels, dfs1+dfs2, df_msep)
 
+
+    if test_results_oracle is None:
+        oracle_pags, oracle_labels = [true_pag], [true_labels]
+    else:
+        oracle_pags, oracle_labels = test_results_oracle[0], test_results_oracle[1]
+
+    #print(test_results_oracle[1])
     fedci_pag_list, fedci_pag_labels, fedci_pag_i_list, fedci_pag_i_labels, fedci_stats = test_results_fedci
     fisher_pag_list, fisher_pag_labels, fisher_pag_i_list, fisher_pag_i_labels, fisher_stats = test_results_fisher
 
-    print(fedci_pag_list, fedci_pag_labels)
-
     fedci_has_correct_pag = False
-    fedci_min_shd = 100
+    fedci_shds = []
     for pred_pag, _labels in zip(fedci_pag_list, fedci_pag_labels):
-        perm = [true_labels.index(col) for col in _labels]
-        pred_pag = np.array(pred_pag)[:, perm][perm, :]
-        shd = np.sum(pred_pag != np.array(true_pag))
-        if shd < fedci_min_shd:
-            fedci_min_shd = shd
-        if np.array_equal(pred_pag, np.array(true_pag)):
-            fedci_has_correct_pag = True
+        min_shd = 99
+        for oracle_pag, _oracle_labels in zip(oracle_pags, oracle_labels):
+            perm = [_oracle_labels.index(col) for col in _labels]
+            pred_pag = np.array(pred_pag)[:, perm][perm, :]
+            shd = np.sum(pred_pag != np.array(oracle_pag)).item()
+            #print('Diff', shd)
+            if shd < min_shd:
+                min_shd = shd
+        fedci_shds.append(min_shd)
+
     fisher_has_correct_pag = False
-    fisher_min_shd = 100
+    fisher_shds = []
     for pred_pag, _labels in zip(fisher_pag_list, fisher_pag_labels):
-        perm = [true_labels.index(col) for col in _labels]
-        pred_pag = np.array(pred_pag)[:, perm][perm, :]
-        shd = np.sum(pred_pag != np.array(true_pag))
-        if shd < fisher_min_shd:
-            fisher_min_shd = shd
-        if np.array_equal(pred_pag, np.array(true_pag)):
-            fisher_has_correct_pag = True
-    print(f'Fedci min shd {fedci_min_shd}, Fisher min shd {fisher_min_shd}')
-    print(f'Fedci preds {len(fedci_pag_list)}, Fisher preds {len(fisher_pag_list)}')
-    print(f'Fedci has correct {fedci_has_correct_pag}, Fisher has correct {fisher_has_correct_pag}')
+        min_shd = 99
+        for oracle_pag, _oracle_labels in zip(oracle_pags, oracle_labels):
+            perm = [_oracle_labels.index(col) for col in _labels]
+            #perm = [true_labels.index(col) for col in _labels]
+            pred_pag = np.array(pred_pag)[:, perm][perm, :]
+            shd = np.sum(pred_pag != np.array(oracle_pag)).item()
+            if shd < min_shd:
+                min_shd = shd
+        fisher_shds.append(min_shd)
 
-    # print('FEDCI')
-    # print(fedci_pag_list)
-    # print(fedci_pag_labels)
-    # print(fedci_pag_i_list)
-    # print(fedci_pag_i_labels)
-    # print('FISHER')
-    # print(fisher_pag_list)
-    # print(fisher_pag_labels)
-    # print(fisher_pag_i_list)
-    # print(fisher_pag_i_labels)
+    result = {
+        'file_id': file,
+        'num_samples': num_samples,
+        'pag_id': pag_id,
+        'num_clients': len(dfs1) + len(dfs2),
+        'fedci_shd': fedci_shds,
+        'fisher_shd': fisher_shds,
+        'oracle_num_predictions': len(oracle_pags) if test_results_oracle is not None else -1,
+        'fedci_num_predictions': len(fedci_pag_list),
+        'fisher_num_predictions': len(fisher_pag_list),
+    }
 
-    asd
+    #print(result)
+
+    with open(LOGFILE, 'a') as f:
+        result_str = json.dumps(result)
+        f.write(result_str + '\n')
