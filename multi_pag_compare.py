@@ -35,7 +35,7 @@ DATA_DIR = 'experiments/datasets/mixed_pag'
 ALPHA = 0.05
 PROCEDURE = 'original'
 
-LOGFILE = './mixed_pag_results.json'
+LOGFILE = './mixed_pag_results_non_faithful.json'
 
 """
 from collections import Counter
@@ -51,6 +51,11 @@ three_tail_pags = [str(t-1) for t in three_tail_pags]
 
 print(len(three_tail_pags) - len(Counter(pagids)))
 set(three_tail_pags) - set(pagids)
+
+
+pagids = [f.split('-')[1] for f in files if f.endswith('-g')]
+sorted([(k,v) for k,v in Counter(pagids).items()], key=lambda x: x[1])
+
 """
 
 
@@ -264,6 +269,8 @@ files = set([f.rpartition('-p')[0] for f in files])
 files = sorted(files)
 files = [DATA_DIR + '/' + f for f in files]
 
+files = [f for f in files if f.endswith('-n')]
+
 
 print(f'Found {len(files)} datasets')
 
@@ -291,7 +298,7 @@ def test_faithfulness(df, df_msep, antijoin_df=None):
 
     return is_faithful, result_df, faithful_df
 
-for file in files:
+for file in files[147:]:
 
     print('Running for', file)
 
@@ -364,6 +371,7 @@ for file in files:
 
     result = {
         'file_id': file,
+        'faithful': file.endswith('-g'),
         'num_samples': num_samples,
         'pag_id': pag_id,
         'num_clients': len(dfs1) + len(dfs2),

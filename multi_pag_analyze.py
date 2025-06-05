@@ -3,7 +3,7 @@ import polars.selectors as cs
 
 target_folder = 'shd'
 
-df = pl.read_ndjson('./mixed_pag_results.json')
+df = pl.read_ndjson('./mixed_pag_results_non_faithful.json')
 
 df = df.with_columns(
     found_correct_fedci=pl.col('fedci_shd').list.contains(0),

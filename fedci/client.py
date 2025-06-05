@@ -265,6 +265,8 @@ class OrdinalComputationUnit(ComputationUnit):
         mus_diff.extend([(mus[i][0], mus[i][1] - mus[i-1][1]) for i in range(1,len(mus))])
         mus_diff.append(('ref',1-mus[-1][1]))
 
+        levels = [int(m[0].split('__ord__')[-1]) for m in mus] + ['ref']
+
         # fix negative probs
         sign_fix = np.column_stack([e[1] for e in mus_diff])
         problematic_indices = np.where(sign_fix < 0)[0]
@@ -279,7 +281,9 @@ class OrdinalComputationUnit(ComputationUnit):
         prob_matrix = np.column_stack([p for _, p in mus_diff])  # shape: (n_samples, n_classes)
 
         y = data[y_label].to_numpy().astype(int)
-        llf = np.sum(np.log(prob_matrix[np.arange(len(y)), y-1]))
+        value_to_index = np.array([levels.index(_y) if _y in levels else -1 for _y in y.tolist()])
+
+        llf = np.sum(np.log(prob_matrix[np.arange(len(y)), value_to_index]))
         deviance = -2 * llf
 
         return {

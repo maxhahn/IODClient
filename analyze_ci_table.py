@@ -316,6 +316,7 @@ color_mapping = {
 
 _df = _df.with_columns(color=pl.col('confusion_value').replace_strict(color_mapping))
 
+_df = _df.rename({'confusion_value': 'Correctness'})
 
 magni1 = hv.Curve([(-0.01, 0.11), (0.11, 0.11)]).opts(linestyle='solid', color='black', alpha=0.8)
 magni2 = hv.Curve([(0.11, -0.01), (0.11, 0.11)]).opts(linestyle='solid', color='black', alpha=0.8)
@@ -323,10 +324,10 @@ magni3 = hv.Curve([(-0.01, -0.01), (-0.01, 0.11)]).opts(linestyle='solid', color
 magni4 = hv.Curve([(-0.01, -0.01), (0.11, -0.01)]).opts(linestyle='solid', color='black', alpha=0.8)
 
 
-plot = _df.sort('confusion_value').hvplot.scatter(
+plot = _df.sort('Correctness').hvplot.scatter(
     x='Federated',
     y='Meta-Analysis',
-    by='confusion_value',
+    by='Correctness',
     color='color',
     alpha=0.7,
     ylim=(-0.01,1.01),
@@ -349,10 +350,10 @@ _render.savefig(f'images/{target_folder}/scatter-fedci-v-fisher-colored-{faithfu
 
 __df = _df.filter((pl.col('Federated')<=0.1) & (pl.col('Meta-Analysis')<=0.1))
 
-plot = __df.sort('confusion_value').hvplot.scatter(
+plot = __df.sort('Correctness').hvplot.scatter(
     x='Federated',
     y='Meta-Analysis',
-    by='confusion_value',
+    by='Correctness',
     color='color',
     alpha=0.7,
     ylim=(-0.001,0.101),
@@ -378,12 +379,12 @@ import numpy as np
 max_bins = 20
 #binning = [b/max_bins for b in range(1,max_bins+1)]
 
-_df = _df.filter(pl.col('correct_fisher') != pl.col('correct_fedci'))
+__df = _df.filter(pl.col('correct_fisher') != pl.col('correct_fedci'))
 
-plot = _df.hvplot.scatter(
+plot = __df.hvplot.scatter(
     x='Federated',
     y='Meta-Analysis',
-    by='confusion_value',
+    by='Correctness',
     alpha=0.5,
     ylim=(-0.01,1.01),
     xlim=(-0.01,1.01),
@@ -404,20 +405,20 @@ _render =  hv.render(plot, backend='matplotlib')
 _render.savefig(f'images/{target_folder}/scatter-fedci-v-fisher-mismatches-colored-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 
-_df = _df.with_columns(
+__df = __df.with_columns(
     xcoord=((pl.col('Federated')*max_bins).cast(pl.Int32)+1)/max_bins,
     ycoord=((pl.col('Meta-Analysis')*max_bins).cast(pl.Int32)+1)/max_bins
 )
 
-_df = _df.group_by('xcoord', 'ycoord').len()
+__df = __df.group_by('xcoord', 'ycoord').len()
 
 base_coords = np.linspace(0,1,max_bins+1)[1:]
 base_coords = [(x0, y0) for x0 in base_coords for y0 in base_coords]
 xcoord, ycoord = zip(*base_coords)
 base_df = pl.DataFrame({'xcoord': xcoord, 'ycoord': ycoord})
-_df = base_df.join(_df, on=['xcoord', 'ycoord'], how='left').with_columns(pl.col('len').fill_null(0))
+__df = base_df.join(__df, on=['xcoord', 'ycoord'], how='left').with_columns(pl.col('len').fill_null(0))
 
-plot = _df.hvplot.heatmap(
+plot = __df.hvplot.heatmap(
     x='xcoord',
     y='ycoord',
     C='len',
