@@ -20,7 +20,7 @@ import polars.selectors as cs
 import dgp
 import fedci
 
-COEF_THRESHOLD = 0.2
+COEF_THRESHOLD = 0.3
 
 # supress R log
 import rpy2.rinterface_lib.callbacks as cb
@@ -267,7 +267,7 @@ def generate_dataset(setup):
     #print('!!! Faithful')
 
     now = int(datetime.datetime.utcnow().timestamp()*1e3)
-    ds_file_pattern = './experiments/datasets/mixed_pag/{}-{}-{}-{}-{}.parquet'
+    ds_file_pattern = './experiments/datasets/mixed_pag2/{}-{}-{}-{}-{}.parquet'
     if is_faithful:
         faith_id = 'g'
     else:
@@ -282,7 +282,7 @@ def generate_dataset(setup):
 #pl.Config.set_tbl_rows(20)
 
 #num_client_options = [4]
-num_samples_options = [4_000] #, 50_000, 100_000]
+num_samples_options = [10_000] #, 50_000, 100_000]
 #split_options = [[0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125]]#[0.1,0.5]
 split_options = [[[(1,1),(1,1)]]]#[0.1,0.5]
 
@@ -300,7 +300,7 @@ three_tail_pags = [t-1 for t in three_tail_pags]
 #three_tail_pags = [81, 1, 83, 36, 69]
 #three_tail_pags = [81, 83, 36, 69]
 #three_tail_pags = [69]
-three_tail_pags = [30, 41, 1, 81, 69, 65, 56, 92, 28, 83]
+#three_tail_pags = [30, 41, 1, 81, 69, 65, 56, 92, 28, 83]
 
 test_setups = [t for t in test_setups if t[2] in three_tail_pags]
 
@@ -311,14 +311,14 @@ configurations = [(i,) + c for i in range(NUM_TESTS) for c in configurations]
 
 #configurations = configurations[20:-20]
 
-#from tqdm.contrib.concurrent import process_map
+from tqdm.contrib.concurrent import process_map
 #from fedci.env import OVR, EXPAND_ORDINALS
 #print(OVR, EXPAND_ORDINALS)
 
 import random
 random.shuffle(configurations)
 
-for configuration in tqdm(configurations):
-    generate_dataset(configuration)
+#for configuration in tqdm(configurations):
+#    generate_dataset(configuration)
 
-#process_map(run_comparison, configurations, max_workers=4, chunksize=1)
+process_map(generate_dataset, configurations, max_workers=2, chunksize=1)

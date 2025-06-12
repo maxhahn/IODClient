@@ -31,11 +31,11 @@ truePAGs, subsetsList = load_pags()
 subsetsList = [(sorted(tuple(x[0])), sorted(tuple(x[1]))) for x in subsetsList]
 truePAGs_map = {i:pag for i, pag in enumerate(truePAGs, start=0)}
 
-DATA_DIR = 'experiments/datasets/mixed_pag'
+DATA_DIR = 'experiments/datasets/mixed_pag2'
 ALPHA = 0.05
 PROCEDURE = 'original'
 
-LOGFILE = './mixed_pag_results_non_faithful.json'
+LOGFILE = './mixed_pag_results.json'
 
 """
 from collections import Counter
@@ -256,11 +256,48 @@ def test_dataset(true_pag, true_labels, dfs, df_msep=None):
         test_df = _fedci_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
         test_df = test_df.with_columns(indep=pl.col('pvalue')>ALPHA)
         test_df = test_df.with_columns(faithful=pl.col('MSep')==pl.col('indep')).filter(~pl.col('faithful'))
-        if len(test_df) > 0:
-            print(test_df)
+
+        fedci_unfaithfulness = []
+        for row in test_df.iter_rows(named=True):
+            fedci_unfaithfulness.append({
+                'id': 0,
+                'vars': true_labels,
+                'X': row['X'],
+                'Y': row['Y'],
+                'S': row['S'].split(','),
+                'predicted_independence': row['indep'],
+                'pvalue': row['pvalue']
+            })
+
+        fisher_unfaithfulness = []
+        for i, (meta_df, _meta_labels) in enumerate(zip(meta_dfs, meta_labels)):
+            _meta_df = pl.from_pandas(meta_df)
+            label_mapping = {str(i):l for i,l in enumerate(_meta_labels, start=1)}
+            _meta_df = _meta_df.with_columns(
+                pl.col('X').cast(pl.Utf8).replace(label_mapping),
+                pl.col('Y').cast(pl.Utf8).replace(label_mapping),
+                pl.col('S').str.split(',').list.eval(pl.element().replace(label_mapping)).list.sort().list.join(','),
+            )
+            test_df = _meta_df.join(df_msep, on=['ord', 'X', 'Y', 'S'], how='left', coalesce=True)
+            test_df = test_df.with_columns(indep=pl.col('pvalue')>ALPHA)
+            test_df = test_df.with_columns(faithful=pl.col('MSep')==pl.col('indep')).filter(~pl.col('faithful'))
+
+            for row in test_df.iter_rows(named=True):
+                fisher_unfaithfulness.append({
+                    'id': i,
+                    'vars': _meta_labels,
+                    'X': row['X'],
+                    'Y': row['Y'],
+                    'S': row['S'].split(','),
+                    'predicted_independence': row['indep'],
+                    'pvalue': row['pvalue']
+                })
+        #if len(test_df) > 0:
+            #print(test_df)
+        return iod_result_fisher, iod_result_fedci, iod_result_oracle, fedci_unfaithfulness, fisher_unfaithfulness
 
 
-    return iod_result_fisher, iod_result_fedci, None if df_msep is None else iod_result_oracle
+    return iod_result_fisher, iod_result_fedci, None, None, None
 
 
 files = os.listdir(DATA_DIR)
@@ -269,7 +306,7 @@ files = set([f.rpartition('-p')[0] for f in files])
 files = sorted(files)
 files = [DATA_DIR + '/' + f for f in files]
 
-files = [f for f in files if f.endswith('-n')]
+#files = [f for f in files if f.endswith('-n')]
 
 
 print(f'Found {len(files)} datasets')
@@ -298,9 +335,10 @@ def test_faithfulness(df, df_msep, antijoin_df=None):
 
     return is_faithful, result_df, faithful_df
 
-for file in files[147:]:
+from tqdm import tqdm
 
-    print('Running for', file)
+for file in tqdm(files[2_895:]):
+    #print('Running for', file)
 
     dfs1 = []
     for _file in glob.glob(f'{file}-p1-*.parquet'):
@@ -331,7 +369,7 @@ for file in files[147:]:
             )
     )
 
-    test_results_fisher, test_results_fedci, test_results_oracle = test_dataset(true_pag, true_labels, dfs1+dfs2, df_msep)
+    test_results_fisher, test_results_fedci, test_results_oracle, fedci_unfaithfulness, fisher_unfaithfulness = test_dataset(true_pag, true_labels, dfs1+dfs2, df_msep)
 
 
     if test_results_oracle is None:
@@ -380,6 +418,8 @@ for file in files[147:]:
         'oracle_num_predictions': len(oracle_pags) if test_results_oracle is not None else -1,
         'fedci_num_predictions': len(fedci_pag_list),
         'fisher_num_predictions': len(fisher_pag_list),
+        'fedci_unfaithfulness': fedci_unfaithfulness,
+        'fisher_unfaithfulness': fisher_unfaithfulness,
     }
 
     #print(result)
