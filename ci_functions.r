@@ -69,7 +69,6 @@ get_data <- function(true_pag_amat, num_samples, variable_levels, mode, coef_thr
     # Always set betas, even if empty
     f.args[[var_name]]$betas <- betas
   }
-
   # Generate data
   dat_out <- FCI.Utils::generateDataset(
     adag = adag,

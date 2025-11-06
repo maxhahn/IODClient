@@ -337,7 +337,7 @@ def test_faithfulness(df, df_msep, antijoin_df=None):
 
 from tqdm import tqdm
 
-for file in tqdm(files[2_895:]):
+for file in tqdm(files):
     #print('Running for', file)
 
     dfs1 = []

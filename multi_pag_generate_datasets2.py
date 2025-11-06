@@ -295,8 +295,9 @@ split_options = [[[(1,1),(1,1)]]]#[0.1,0.5]
 
 # THREE TAIL PAGS
 #  [1]  2 16 18 19 20 23 29 31 37 42 44 53 57 58 62 64 66 69 70 72 73 74 75 79 81 82 83 84 93 98
-#three_tail_pags = [2, 16, 18, 19, 20, 23, 29, 31, 37, 42, 44, 53, 57, 58, 62, 64, 66, 69, 70, 72, 73, 74, 75, 79, 81, 82, 83, 84, 93, 98]
-#three_tail_pags = [t-1 for t in three_tail_pags]
+three_tail_pags = [2, 16, 18, 19, 20, 23, 29, 31, 37, 42, 44, 53, 57, 58, 62, 64, 66, 69, 70, 72, 73, 74, 75, 79, 81, 82, 83, 84, 93, 98]
+three_tail_pags = [t-1 for t in three_tail_pags]
+assert len(three_tail_pags) == 30
 
 #three_tail_pags = [1, 41, 83, 69, 81, 19, 36]
 #three_tail_pags = [81, 1, 83, 36, 69]
@@ -305,7 +306,7 @@ split_options = [[[(1,1),(1,1)]]]#[0.1,0.5]
 #three_tail_pags = [30, 41, 1, 81, 69, 65, 56, 92, 28, 83]
 #three_tail_pags = [69, 30, 61, 28, 80, 1, 83, 18, 92, 22, 78, 19, 81]
 #three_tail_pags = [69, 30, 61, 80, 83, 92, 28, 78, 1, 81]
-three_tail_pags = [69, 30, 61, 80, 83, 92, 78, 81]
+#three_tail_pags = [69, 30, 61, 80, 83, 92, 78, 81]
 
 test_setups = [t for t in test_setups if t[2] in three_tail_pags]
 

@@ -4,8 +4,10 @@ import polars.selectors as cs
 import os
 
 #dir, target_folder = 'experiments/simulation/results7', 'ci_table'
-#dir, target_folder = 'experiments/simulation/slides', 'ci_table_slides_pag'
-dir, target_folder = 'experiments/simulation/single_data', 'ci_table_single_dataset'
+dir, target_folder = 'experiments/simulation/slides', 'ci_table_slides_pag'
+#dir, target_folder = 'experiments/simulation/single_data', 'ci_table_single_dataset'
+#
+#dir, target_folder = 'experiments/simulation/mixed_pag2', 'ci_table_fully_random_data'
 
 
 #all_faithful_ids = [f.rpartition('-')[0] for f in os.listdir('experiments/datasets/f2')]
@@ -65,6 +67,9 @@ faithfulness_filter = None#'g'
 df = df.filter(pl.col('num_samples') == 4000)
 df = df.filter(pl.col('num_splits') == 4)
 #df = df.filter(pl.col('split_sizes').list.max() == 4)
+
+#print(df.group_by('X','Y','S').len().sort('len'))
+#print(len(df))
 
 if faithfulness_filter is None:
     faithfulness_filter= 'all'
@@ -345,7 +350,13 @@ plot = _df.sort('Correctness').hvplot.scatter(
     #title=f'{"Client" if i == 1 else "Clients"}'
 )
 
+#plot = plot.opts(legend_opts={'title': 'Correctness'})
+
 _render =  hv.render(plot*magni1*magni2*magni3*magni4, backend='matplotlib')
+ax = _render.axes[0]
+legend = ax.get_legend()
+if legend:
+    legend.set_title("Correctness")
 _render.savefig(f'images/{target_folder}/scatter-fedci-v-fisher-colored-{faithfulness_filter}.svg', format='svg', bbox_inches='tight', dpi=300)
 
 __df = _df.filter((pl.col('Federated')<=0.1) & (pl.col('Meta-Analysis')<=0.1))

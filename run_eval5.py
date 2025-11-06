@@ -7,42 +7,27 @@ import holoviews as hv
 import matplotlib.pyplot as plt
 import matplotlib
 
-#matplotlib.use("pgf")
 plt.rcParams.update({
-    #"svg.fonttype": "none",
-    "svg.fonttype": "none",
-    #"pgf.texsystem": "pdflatex",  # or "lualatex", "xelatex" depending on your document
-    #"font.family": "serif",
-    #"text.usetex": True,
-    #"font.size": 8,
-    #"pgf.rcfonts": False,
+    "text.usetex": True,
+    "font.family": "serif",
+    "font.serif": ["Computer Modern Roman"],
+    "font.size": 8,
+    "axes.titlesize": 8,
+    "axes.labelsize": 8,
+    "legend.fontsize": 7,
+    "xtick.labelsize": 7,
+    "ytick.labelsize": 7,
+    "pdf.fonttype": 42,
+    "ps.fonttype": 42,
+    "text.latex.preamble": r"\usepackage{amsmath}"
 })
 
 hvplot.extension('matplotlib')
 
-"""
-sudo apt update
-sudo apt install texlive-full
-"""
-# latex font update
-"""
-sudo updmap-sys --setoption pdftexDownloadBase14 true
-sudo updmap-sys
-"""
-
-# sudo apt update
-# sudo apt-get install texlive
-
-#path =  './experiments/fed-v-fisher/*.ndjson'
-path =  './experiments/fed-v-fisher*/*.ndjson'
-#path =  './experiments/fed-v-fisher-final/*.ndjson'
+path = './experiments/fed-v-fisher*/*.ndjson'
 df = pl.read_ndjson(path)
 
-#df.write_ndjson('./experiments/fed-v-fisher-final/results1.ndjson')
-
-
 print(df.columns)
-#df = df.with_columns(max_split_percentage=pl.col('split_percentages').list.max())
 
 df = df.select('name', 'num_clients', 'num_samples', cs.ends_with('_p_values'))
 
@@ -60,11 +45,9 @@ else:
     current_experiment_type = ''
 
 df = df.filter(pl.col('num_samples') < 4000)
-#df = df.filter(pl.col('num_client') <= 5)
 df = df.filter(~(pl.col('name').str.contains('\(')))
 
 print(df.group_by('experiment_type', 'conditioning_type').agg(pl.len()).sort('len'))
-#df = df.sort('experiment_type', 'conditioning_type')
 df = df.explode('federated_p_values', 'fisher_p_values', 'baseline_p_values')
 
 num_samples = 2000
@@ -75,13 +58,8 @@ _df = _df.rename({
     'fisher_p_values': 'Meta-Analysis'
 })
 for i in [1,3,5,7]:
-
-
     __df = _df.filter(pl.col('num_clients') == i)
-    #print(i, len(_df), len(__df))
     __df = __df.sample(min(1_000, len(__df)))
-
-
 
     _plot = __df.hvplot.scatter(
         x='baseline_p_values',
@@ -91,19 +69,15 @@ for i in [1,3,5,7]:
         xlim=(-0.01,1.01),
         width=400,
         height=400,
-        #by='Method',
         legend='bottom_right',
-        #backend='matplotlib',
         s=5000,
-        xlabel=r'Baseline p-value',  # LaTeX-escaped #
+        xlabel=r'Baseline p-value',
         ylabel=r'Predicted p-value',
         marker=['v', '^'],
-        #linestyle=['dashed', 'dotted']
-        #title=f'{"Client" if i == 1 else "Clients"}'
     )
 
-    _render =  hv.render(_plot, backend='matplotlib')
-    _render.savefig(f'images/pval_comp/scatter-c{i}-samples{num_samples}.svg', format='svg', bbox_inches='tight', dpi=300)
+    _render = hv.render(_plot, backend='matplotlib')
+    _render.savefig(f'images/pval_comp/scatter-c{i}-samples{num_samples}.pdf', format='pdf', bbox_inches='tight', dpi=300)
 
     _plot = __df.hvplot.scatter(
         x='baseline_p_values',
@@ -113,20 +87,15 @@ for i in [1,3,5,7]:
         xlim=(-0.01,0.1),
         width=400,
         height=400,
-        #by='Method',
         legend='bottom_right',
-        #backend='matplotlib',
         s=5000,
-        xlabel=r'Baseline p-value',  # LaTeX-escaped #
+        xlabel=r'Baseline p-value',
         ylabel=r'Predicted p-value',
         marker=['v', '^'],
-        #linestyle=['dashed', 'dotted']
-        #title=f'{"Client" if i == 1 else "Clients"}'
     )
 
-    _render =  hv.render(_plot, backend='matplotlib')
-    _render.savefig(f'images/pval_comp/scatter-c{i}-samples{num_samples}-small.svg', format='svg', bbox_inches='tight', dpi=300)
-
+    _render = hv.render(_plot, backend='matplotlib')
+    _render.savefig(f'images/pval_comp/scatter-c{i}-samples{num_samples}-small.pdf', format='pdf', bbox_inches='tight', dpi=300)
 
 def get_correlation(df, identifiers, colx, coly):
     _df = df
@@ -160,36 +129,20 @@ def get_correlation(df, identifiers, colx, coly):
     _df = _df.join(df_correlation_fix, on=identifiers, how='left')
     _df = _df.with_columns(pl.coalesce(['p_value_correlation', 'correlation_fix'])).drop('correlation_fix')
 
-    #dfx = _df.filter(pl.col('p_value_correlation').is_null())
-
     _df = _df.with_columns(pl.col('p_value_correlation').fill_nan(None))
     _df = _df.join(df_correlation_fix2, on=identifiers, how='left')
     _df = _df.with_columns(pl.coalesce(['p_value_correlation', 'correlation_fix'])).drop('correlation_fix')
 
     _df = _df.with_columns(pl.col('p_value_correlation').fill_nan(None))
-
-    #print(_df.join(dfx, on=['name', 'num_clients', 'num_samples'], how='semi'))
     assert _df['p_value_correlation'].null_count() == 0, 'NaN in correlations'
 
     return _df
 
-identifiers = [
-    #'name',
-    'num_clients',
-    'num_samples',
-    #'experiment_type',
-    #'conditioning_type'
-]
-
+identifiers = ['num_clients', 'num_samples']
 df_fed = get_correlation(df, identifiers, 'federated_p_values', 'baseline_p_values').rename({'p_value_correlation': 'Federated'})
 df_fisher = get_correlation(df, identifiers, 'fisher_p_values', 'baseline_p_values').rename({'p_value_correlation': 'Meta-Analysis'})
 
-
-_df = df.select(identifiers).unique().join(
-    df_fed, on=identifiers, how='left'
-).join(
-    df_fisher, on=identifiers, how='left'
-)
+_df = df.select(identifiers).unique().join(df_fed, on=identifiers, how='left').join(df_fisher, on=identifiers, how='left')
 
 df_unpivot = _df.unpivot(
     on=['Federated', 'Meta-Analysis'],
@@ -199,16 +152,6 @@ df_unpivot = _df.unpivot(
 )
 
 df_unpivot = df_unpivot.rename({'num_samples': '# Samples', 'correlation': 'Correlation'})
-
-
-
-# Set up matplotlib to use LaTeX-style text rendering
-# plt.rcParams.update({
-#     "text.usetex": True,
-#     "font.family": "serif",
-#     "font.serif": ["Computer Modern Roman"],
-#     "text.latex.preamble": r"\usepackage{amsmath}"
-# })
 
 print(df_unpivot.head())
 
@@ -225,28 +168,18 @@ for i in [1,3,5,7]:
         height=400,
         by='Method',
         legend='bottom_right',
-        #backend='matplotlib',
-        xlabel=r'# Samples',  # LaTeX-escaped #
+        xlabel=r'# Samples',
         ylabel=r'Correlation',
         linestyle=['dashed', 'dotted']
-        #title=f'{"Client" if i == 1 else "Clients"}'
     )
 
-    # Apply different line styles
-    #_plot = _plot.opts(line_dash=['solid', 'dashed'])
-
-    _render =  hv.render(_plot, backend='matplotlib')
-    #_render.savefig(f'images/correlation-c{i}.pgf', format='pgf', bbox_inches='tight', dpi=300)
-    _render.savefig(f'images/pval_comp/correlation-c{i}{current_experiment_type}.svg', format='svg', bbox_inches='tight', dpi=300)
-    #_render.savefig(f'images/pval_comp/correlation-c{i}{current_experiment_type}.pgf', format='pgf', bbox_inches='tight', dpi=300)
+    _render = hv.render(_plot, backend='matplotlib')
+    _render.savefig(f'images/pval_comp/correlation-c{i}{current_experiment_type}.pdf', format='pdf', bbox_inches='tight', dpi=300)
 
     if plot is None:
         plot = _plot
     else:
         plot = plot + _plot
-
-
-# --------------------------------
 
 def get_accuracy(df, identifiers, colx, coly, alpha):
     df = df.with_columns(
@@ -261,22 +194,10 @@ def get_accuracy(df, identifiers, colx, coly, alpha):
 
 alpha = 0.05
 
-identifiers = [
-    #'name',
-    'num_clients',
-    'num_samples',
-    #'experiment_type',
-    #'conditioning_type'
-]
 df_fed = get_accuracy(df, identifiers, 'federated_p_values', 'baseline_p_values', alpha).rename({'accuracy': 'Federated'})
 df_fisher = get_accuracy(df, identifiers, 'fisher_p_values', 'baseline_p_values', alpha).rename({'accuracy': 'Meta-Analysis'})
 
-
-_df = df.select(identifiers).unique().join(
-    df_fed, on=identifiers, how='left'
-).join(
-    df_fisher, on=identifiers, how='left'
-)
+_df = df.select(identifiers).unique().join(df_fed, on=identifiers, how='left').join(df_fisher, on=identifiers, how='left')
 
 df_unpivot = _df.unpivot(
     on=['Federated', 'Meta-Analysis'],
@@ -299,19 +220,10 @@ for i in [1,3,5,7]:
         height=400,
         by='Method',
         legend='bottom_right',
-        #backend='matplotlib',
-        xlabel=r'# Samples',  # LaTeX-escaped #
+        xlabel=r'# Samples',
         ylabel=r'Accuracy',
         linestyle=['dashed', 'dotted']
-        #title=f'{"Client" if i == 1 else "Clients"}'
     )
 
-    # Apply different line styles
-    #_plot = _plot.opts(line_dash=['solid', 'dashed'])
-
-    #plt.rcParams['svg.fonttype'] = 'none'
-
-    _render =  hv.render(_plot, backend='matplotlib')
-    #_render.savefig(f'images/accuracy-c{i}.pgf', format='pgf', bbox_inches='tight', dpi=300)
-    #_render.savefig(f'images/accuracy-c{i}.png', format='png', bbox_inches='tight', dpi=300)
-    _render.savefig(f'images/pval_comp/accuracy-c{i}{current_experiment_type}.svg', format='svg', bbox_inches='tight', dpi=300)
+    _render = hv.render(_plot, backend='matplotlib')
+    _render.savefig(f'images/pval_comp/accuracy-c{i}{current_experiment_type}.pdf', format='pdf', bbox_inches='tight', dpi=300)

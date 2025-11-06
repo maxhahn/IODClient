@@ -156,10 +156,13 @@ run_fci <- function(dataset, obs_vars, alpha=0.05) {
 
   indepTest <- mixedCITest
 
+  dataset[] <- lapply(dataset, function(x) if (is.character(x)) as.factor(x) else x)
+
   suffStat <- getMixedCISuffStat(dat = dataset,
                                    vars_names = obs_vars,
                                    covs_names = c())
 
+  print(suffStat)
   citestResults <- getAllCITestResults(dataset, indepTest, suffStat)
 
 
@@ -198,13 +201,17 @@ run_ci_test <- function(data, max_cond_set_cardinality, filedir, filename) {
   result
 }
 
-get_data <- function(true_pag_amat, num_samples, mode, coef_thresh) {
+get_data <- function(true_pag_amat, num_samples, mode, coef_thresh, variable_levels=NULL) {
 
   var_levels  <- list()
   cols <- colnames(true_pag_amat)
   for (vari in 1:length(cols)) {
       var_name <- colnames(true_pag_amat)[vari]
-      var_levels[[var_name]] <- 1#variable_levels[[vari]]
+      if (is.null(variable_levels)) {
+        var_levels[[var_name]] <- 1
+      } else {
+        var_levels[[var_name]] <- variable_levels[[vari]]
+      }
   }
 
   # Convert PAG adjacency matrix to canonical DAG
@@ -271,7 +278,7 @@ get_data <- function(true_pag_amat, num_samples, mode, coef_thresh) {
 }
 
 
-get_data_for_single_pag <- function(num_samples, mode, coef_thresh, seed=NULL) {
+get_data_for_single_pag <- function(num_samples, mode, coef_thresh, seed=NULL, variable_levels=NULL) {
   if (!is.null(seed)) {
     set.seed(seed)
   }
@@ -284,5 +291,7 @@ get_data_for_single_pag <- function(num_samples, mode, coef_thresh, seed=NULL) {
   colnames(true.amat.pag) <- c("A", "B", "C", "D", "E")
   rownames(true.amat.pag) <- colnames(true.amat.pag)
 
-  return(get_data(true.amat.pag, num_samples, mode, coef_thresh))
+  print(variable_levels)
+
+  return(get_data(true.amat.pag, num_samples, mode, coef_thresh, variable_levels))
 }

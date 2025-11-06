@@ -55,7 +55,7 @@ subsetsList = [(sorted(tuple(x[0])), sorted(tuple(x[1]))) for x in subsetsList]
 def get_dataframe_from_r(test_setup, num_samples, mode='mixed'):
     raw_true_pag = test_setup[0]
     labels = sorted(list(set(test_setup[1][0] + test_setup[1][1])))
-    potential_var_types = {'continuous': [1], 'binary': [2], 'ordinal': [3,4], 'nominal': [3,4]}
+    potential_var_types = {'continuous': [1], 'binary': [2], 'ordinal': [4], 'nominal': [4]}
 
     var_types = {}
     var_levels = []
@@ -303,6 +303,22 @@ three_tail_pags = [t-1 for t in three_tail_pags]
 #three_tail_pags = [30, 41, 1, 81, 69, 65, 56, 92, 28, 83]
 
 test_setups = [t for t in test_setups if t[2] in three_tail_pags]
+# TRUE_PAG = np.array([
+#     [0,0,2,2,0],
+#     [0,0,2,0,0],
+#     [2,1,0,2,2],
+#     [2,0,3,0,2],
+#     [0,0,3,3,0]
+# ])
+# # 61 -> SLIDE PAG
+
+# for t in test_setups:
+#     pag = np.array(t[0])
+#     if np.array_equal(pag, TRUE_PAG):
+#         print(t[2])
+
+# asd
+
 
 configurations = list(itertools.product(test_setups, num_samples_options, split_options))
 configurations = [(data_dir, data_file_pattern) + c for c in configurations]

@@ -1,4 +1,3 @@
-from re import A
 import polars as pl
 import polars.selectors as cs
 import numpy as np
@@ -34,10 +33,10 @@ run_ci_test_f = ro.globalenv['run_ci_test']
 get_data_f = ro.globalenv['get_data_for_single_pag']
 
 ALPHA = 0.05
-NUM_SAMPLES = [5_000, 7500, 10_000]
-SPLITS = [[1,1], [2,1], [1,2], [3,1], [1,3], [1,1,1,1], [2,2,1,1]]
-SEEDS = [x+202_030 for x in range(100_000)]
-COEF_THRESHOLD = 0.1
+NUM_SAMPLES = [5_000, 7500, 10_000, 20_000]
+SPLITS = [[1,1]]#, [2,1], [1,2], [3,1], [1,3], [1,1,1,1], [2,2,1,1]]
+SEEDS = [x+101_000 for x in range(100_000)]
+COEF_THRESHOLD = 0.3 #0.1
 
 DF_MSEP = pl.read_parquet(
     'experiments/pag_msep/pag-slides.parquet'
@@ -68,12 +67,33 @@ all_labels = sorted(list(set(partition_1_labels)|set(partition_2_labels)))
 intersection_labels = sorted(list(set(partition_1_labels)&set(partition_2_labels)))
 
 
-def get_data(num_samples, seed):
+def get_datax(num_samples, seed):
     dat = get_data_f(num_samples, 'continuous', COEF_THRESHOLD, seed)
     with (ro.default_converter + pandas2ri.converter).context():
         df = ro.conversion.get_conversion().rpy2py(dat[0])
     df = pl.from_pandas(df)
     return df
+
+def get_data(num_samples, seed):
+    var_types = {'A': 'continuous', 'B': 'continuous', 'C': 'nominal', 'D': 'nominal', 'E': 'continuous'}
+    var_levels = [1,1,3,3,1]
+
+    dat = get_data_f(num_samples, 'mixed', COEF_THRESHOLD, seed, var_levels)
+    with (ro.default_converter + pandas2ri.converter).context():
+        df = ro.conversion.get_conversion().rpy2py(dat[0])
+    df = pl.from_pandas(df)
+    for var_name, var_type in var_types.items():
+        if var_type == 'continuous':
+            df = df.with_columns(pl.col(var_name).cast(pl.Float64))
+        elif var_type == 'binary':
+            df = df.with_columns(pl.col(var_name) == 'A')
+        elif var_type == 'ordinal':
+            repl_dict = {'A': 1, 'B': 2, 'C': 3, 'D': 4}
+            df = df.with_columns(pl.col(var_name).cast(pl.Utf8).replace(repl_dict).cast(pl.Int32))
+        elif var_type == 'nominal':
+            df = df.with_columns(pl.col(var_name).cast(pl.Utf8))
+    return df
+
 
 def run_pval_agg_iod(dfs, client_labels, alpha=0.05, procedure='original'):
 
@@ -206,13 +226,11 @@ def test_dataset(dfs):
         with (ro.default_converter + pandas2ri.converter + numpy2ri.converter).context():
             fci_result_df = run_fci_f(df.to_pandas(), ro.StrVector(sorted(df.columns)))
         fci_results.append(fci_result_df)
-
     # STEP 2: IOD WITH META-ANALYSIS
     # -> Load results df and just get pvalues from there
     #pvalue_df_meta = pvalue_df.select('ord', 'X', 'Y', 'S', pvalue=pl.col('pvalue_fisher'))
     meta_dfs, meta_labels = zip(*[mxm_ci_test(d) for d in dfs])
     iod_result_fisher = run_pval_agg_iod(meta_dfs, meta_labels)
-
     # STEP 3: IOD WITH FEDCI
     # -> Load results df and just get pvalues from there
     server = fedci.Server(
