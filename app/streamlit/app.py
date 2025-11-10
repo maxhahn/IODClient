@@ -229,21 +229,9 @@ def step_check_in_to_server():
         button_text = "Submit check-in request"
         request_url = f"{st.session_state['server_url']}/user/check-in"
 
-        if algo_type == env.Algorithm.FEDCI.name:
-            categorical_expressions, ordinal_expressions, schema = None, None, None
-        else:
-            fedci_client = st.session_state["fedci_client"]
-            categorical_expressions = fedci_client.get_categorical_expressions()
-            ordinal_expressions = fedci_client.get_ordinal_expressions()
-            schema = fedci_client.get_data_schema()
-
         request_params = {
             "username": username,
             "algorithm": algo_type,
-            "data_labels": st.session_state["result_labels"],
-            "schema": schema,
-            "categorical_expressions": categorical_expressions,
-            "ordinal_expressions": ordinal_expressions,
         }
     else:
         button_text = "Update user"
@@ -270,7 +258,41 @@ def step_check_in_to_server():
         st.session_state["server_provided_user_id"] = r["id"]
         st.session_state["username"] = r["username"]
         st.session_state["selected_algorithm"] = r["algorithm"]
+
+        if st.session_state["selected_algorithm"] == env.Algorithm.FEDCI.name:
+            if st.session_state["fedci_client"] is not None:
+                st.session_state["fedci_client"].close()
+                del st.session_state["fedci_client"]
+                st.session_state["fedci_client"] = None
+            if st.session_state["fedci_client_thread"] is not None:
+                del st.session_state["fedci_client_thread"]
+                st.session_state["fedci_client_thread"] = None
+
+            client_port = 16016
+            client = fedci.ProxyClient(
+                pl.from_pandas(st.session_state["uploaded_data"])
+            )
+            client_thread = threading.Thread(
+                target=client.start, args=(client_port,), daemon=True
+            )
+            client_thread.start()
+
+            st.session_state["fedci_client"] = client
+            st.session_state["fedci_client_thread"] = client_thread
+            st.session_state["fedci_client_port"] = client_port
+
+            r = post_to_server(
+                url=f"{st.session_state['server_url']}/user/submit-rpc-info",
+                payload={
+                    "id": st.session_state["server_provided_user_id"],
+                    "username": st.session_state["username"],
+                    "data_labels": st.session_state["result_labels"],
+                    "hostname": "localhost",
+                    "port": client_port,
+                },
+            )
         st.rerun()
+
     return
 
 
@@ -343,25 +365,6 @@ def step_upload_data():
     # Reset when new file is uploaded
     st.session_state["result_labels"] = list(st.session_state["uploaded_data"].columns)
     st.session_state["result_pvals"] = None
-
-    if st.session_state["fedci_client"] is not None:
-        st.session_state["fedci_client"].close()
-        del st.session_state["fedci_client"]
-        st.session_state["fedci_client"] = None
-    if st.session_state["fedci_client_thread"] is not None:
-        del st.session_state["fedci_client_thread"]
-        st.session_state["fedci_client_thread"] = None
-
-    client_port = 16016
-    client = fedci.ProxyClient(pl.from_pandas(st.session_state["uploaded_data"]))
-    client_thread = threading.Thread(
-        target=client.start, args=(client_port,), daemon=True
-    )
-    client_thread.start()
-
-    st.session_state["fedci_client"] = client
-    st.session_state["fedci_client_thread"] = client_thread
-    st.session_state["fedci_client_port"] = client_port
 
     if st.session_state["uploaded_data"] is not None:
         with st.expander("View Data"):
