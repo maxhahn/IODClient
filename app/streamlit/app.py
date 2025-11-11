@@ -90,6 +90,8 @@ if "uploaded_data_filename" not in st.session_state:
     st.session_state["uploaded_data_filename"] = None
 if "result_pvals" not in st.session_state:
     st.session_state["result_pvals"] = None
+if "data_schema" not in st.session_state:
+    st.session_state["data_schema"] = None
 if "result_labels" not in st.session_state:
     st.session_state["result_labels"] = None
 if "server_has_received_data" not in st.session_state:
@@ -286,7 +288,7 @@ def step_check_in_to_server():
                 payload={
                     "id": st.session_state["server_provided_user_id"],
                     "username": st.session_state["username"],
-                    "data_labels": st.session_state["result_labels"],
+                    "data_schema": st.session_state["data_schema"],
                     "hostname": "localhost",
                     "port": client_port,
                 },
@@ -363,6 +365,12 @@ def step_upload_data():
         st.session_state["uploaded_data_filename"] = filename
 
     # Reset when new file is uploaded
+    st.session_state["data_schema"] = {
+        k: str(v)
+        for k, v in dict(
+            pl.from_pandas(st.session_state["uploaded_data"]).schema
+        ).items()
+    }
     st.session_state["result_labels"] = list(st.session_state["uploaded_data"].columns)
     st.session_state["result_pvals"] = None
 
@@ -482,7 +490,7 @@ def step_process_data():
         use_container_width=True,
     ):
         df_pvals = st.session_state["result_pvals"]
-        labels = st.session_state["result_labels"]
+        schema = st.session_state["data_schema"]
         base64_df = base64.b64encode(pickle.dumps(df_pvals)).decode("utf-8")
         # send data and labels
         r = post_to_server(
@@ -491,7 +499,7 @@ def step_process_data():
                 "id": st.session_state["server_provided_user_id"],
                 "username": st.session_state["username"],
                 "data": base64_df,
-                "data_labels": labels,
+                "data_schema": schema,
             },
         )
         if r is None:
@@ -896,7 +904,7 @@ def step_show_room_details():
         st.session_state["_alpha_value"] = st.session_state["alpha_value"]
 
     # Run config
-    if room["algorithm"] == "FEDGLM":
+    if room["algorithm"] == env.Algorithm.FEDCI:
         _, col1, col2, _ = st.columns((1, 3, 3, 1))
     else:
         _, col1, _ = st.columns((1, 5, 1))
@@ -910,7 +918,7 @@ def step_show_room_details():
         format="%.2f",
         on_change=change_alpha_value,
     )
-    if room["algorithm"] == "FEDGLM":
+    if room["algorithm"] == env.Algorithm.FEDCI:
 
         def change_max_conditioning_set():
             st.session_state["_max_conditioning_set"] = st.session_state[
@@ -946,8 +954,20 @@ def step_show_room_details():
         col2.write(user_str)
 
         with col3.expander("Show"):
-            for label in sorted(room["user_provided_labels"][user]):
-                st.markdown(f"- {label}")
+            for label, dtype in sorted(
+                room["user_provided_schema"][user].items(), key=lambda x: x[0]
+            ):
+                if dtype.startswith("Float"):
+                    field_dtype_name = "(continuous)"
+                elif dtype.startswith("Int"):
+                    field_dtype_name = "(ordinal)"
+                elif dtype == "String":
+                    field_dtype_name = "(multinomial)"
+                elif dtype.startswith("Bool"):
+                    field_dtype_name = "(binomial)"
+                else:
+                    field_dtype_name = "(?)"
+                st.markdown(f"- {label} {field_dtype_name}")
 
         if user != st.session_state["username"]:
             if col4.button(
@@ -972,10 +992,10 @@ def step_show_room_details():
                     return
                 st.error(f"Failed to kick user")
 
-    if room["algorithm"] == "FEDGLM" and room["is_processing"]:
+    if room["algorithm"] == env.Algorithm.FEDCI and room["is_processing"]:
         fedglm_status = room["algorithm_info"]
         if fedglm_status is None:
-            raise Exception("FEDGLM STATUS CANNOT BE NONE IF ROOM IS PROCESSING")
+            raise Exception("FEDCI STATUS CANNOT BE NONE IF ROOM IS PROCESSING")
         provide_fedglm_data(room, fedglm_status)
 
     return

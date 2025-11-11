@@ -27,62 +27,31 @@ import fedci
 class AlgorithmController(Controller):
     path = "/run"
 
-    # TODO: Missing ord0 rows need to be added with p value 0! (see algorithm 1 of tillman and sprites 2011)
-    def run_iod_on_user_datax(self, data, alpha):
-        users = []
-
-        ro.r["source"]("./scripts/ci_functions.r")
-        aggregate_ci_results_f = ro.globalenv["aggregate_ci_results"]
-        # Reading and processing data
-        # df = pl.read_csv("./random-data-1.csv")
-        with (ro.default_converter + pandas2ri.converter).context():
-            lvs = []
-            for user, df, labels in data:
-                # converting it into r object for passing into r function
-                d = [
-                    ("citestResults", ro.conversion.get_conversion().py2rpy(df)),
-                    ("labels", ro.StrVector(labels)),
-                ]
-                od = OrderedDict(d)
-                lv = ro.ListVector(od)
-                lvs.append(lv)
-                users.append(user)
-
-            result = aggregate_ci_results_f(lvs, alpha)
-
-            g_pag_list = [x[1].tolist() for x in result["G_PAG_List"].items()]
-            g_pag_labels = [list(x[1]) for x in result["G_PAG_Label_List"].items()]
-            gi_pag_list = [x[1].tolist() for x in result["Gi_PAG_List"].items()]
-            gi_pag_labels = [list(x[1]) for x in result["Gi_PAG_Label_List"].items()]
-            return (
-                g_pag_list,
-                g_pag_labels,
-                {u: r for u, r in zip(users, gi_pag_list)},
-                {u: l for u, l in zip(users, gi_pag_labels)},
-            )
-
-    def run_iod_on_user_data_fisher(self, users, dfs, client_labels, alpha):
+    def run_iod_on_user_data_fisher(self, dfs, client_labels, alpha):
         ro.r["source"]("./scripts/iod.r")
         aggregate_ci_results_f = ro.globalenv["aggregate_ci_results"]
-
-        print(dfs[0])
 
         with (
             ro.default_converter + pandas2ri.converter + numpy2ri.converter
         ).context():
-            lvs = []
             r_dfs = [ro.conversion.get_conversion().py2rpy(df) for df in dfs]
             # r_dfs = ro.ListVector(r_dfs)
-            label_list = [ro.StrVector(v) for v in client_labels]
+            users = client_labels.keys()
+            label_list = [ro.StrVector(v) for v in client_labels.values()]
 
             result = aggregate_ci_results_f(label_list, r_dfs, alpha)
 
             g_pag_list = [x[1].tolist() for x in result["G_PAG_List"].items()]
-            g_pag_labels = [list(x[1]) for x in result["G_PAG_Label_List"].items()]
+            g_pag_labels = [
+                list([str(a) for a in x[1]]) for x in result["G_PAG_Label_List"].items()
+            ]
             g_pag_list = [np.array(pag).astype(int).tolist() for pag in g_pag_list]
             gi_pag_list = [x[1].tolist() for x in result["Gi_PAG_list"].items()]
-            gi_pag_labels = [list(x[1]) for x in result["Gi_PAG_Label_List"].items()]
-            g_pag_list = [np.array(pag).astype(int).tolist() for pag in gi_pag_list]
+            gi_pag_labels = [
+                list([str(a) for a in x[1]])
+                for x in result["Gi_PAG_Label_List"].items()
+            ]
+            gi_pag_list = [np.array(pag).astype(int).tolist() for pag in gi_pag_list]
         return (
             g_pag_list,
             g_pag_labels,
@@ -90,39 +59,40 @@ class AlgorithmController(Controller):
             {u: l for u, l in zip(users, gi_pag_labels)},
         )
 
-    def run_iod_on_combined_data(self, df, labels, users, user_labels, alpha):
-        ro.r["source"]("./scripts/ci_functions.r")
-        iod_on_ci_data_f = ro.globalenv["iod_on_ci_data"]
-
-        # let index start with 1
-        df.index += 1
-
-        user_labels = [ro.StrVector(v) for v in user_labels]
-
+    def iod_r_call_on_combined_data(
+        self, df, client_labels, alpha=0.05, procedure="original"
+    ):
         with (ro.default_converter + pandas2ri.converter).context():
-            # converting it into r object for passing into r function
+            ro.r["source"]("./scripts/iod.r")
+            iod_on_ci_data_f = ro.globalenv["iod_on_ci_data"]
+
+            labels = sorted(list(set().union(*(client_labels.values()))))
+
             suff_stat = [
                 ("citestResults", ro.conversion.get_conversion().py2rpy(df)),
                 ("all_labels", ro.StrVector(labels)),
             ]
             suff_stat = OrderedDict(suff_stat)
             suff_stat = ro.ListVector(suff_stat)
+            users = client_labels.keys()
+            label_list = [ro.StrVector(v) for v in client_labels.values()]
 
-            result = iod_on_ci_data_f(user_labels, suff_stat, alpha)
+            result = iod_on_ci_data_f(label_list, suff_stat, alpha, procedure)
 
             g_pag_list = [x[1].tolist() for x in result["G_PAG_List"].items()]
-            g_pag_labels = [list(x[1]) for x in result["G_PAG_Label_List"].items()]
             g_pag_list = [np.array(pag).astype(int).tolist() for pag in g_pag_list]
+            g_pag_labels = [
+                list([str(a) for a in x[1]]) for x in result["G_PAG_Label_List"].items()
+            ]
             gi_pag_list = [x[1].tolist() for x in result["Gi_PAG_list"].items()]
-            gi_pag_labels = [list(x[1]) for x in result["Gi_PAG_Label_List"].items()]
-            g_pag_list = [np.array(pag).astype(int).tolist() for pag in gi_pag_list]
+            gi_pag_list = [np.array(pag).astype(int).tolist() for pag in gi_pag_list]
+            gi_pag_labels = [
+                list([str(a) for a in x[1]])
+                for x in result["Gi_PAG_Label_List"].items()
+            ]
 
-            print(g_pag_list)
-            print(g_pag_labels)
             user_pags = {u: r for u, r in zip(users, gi_pag_list)}
             user_labels = {u: l for u, l in zip(users, gi_pag_labels)}
-            print(user_pags)
-            print(user_labels)
 
         return g_pag_list, g_pag_labels, user_pags, user_labels
 
@@ -131,15 +101,15 @@ class AlgorithmController(Controller):
 
         # gather data of all participants
         participant_data = []
-        participant_data_labels = []
+        participant_data_labels = {}
         participants = room.users
         for user in participants:
             conn = user2connection[user]
             participant_data.append(conn.algorithm_data.data)
-            participant_data_labels.append(conn.algorithm_data.data_labels)
+            participant_data_labels[user] = conn.algorithm_data.data_schema.keys()
 
         return self.run_iod_on_user_data_fisher(
-            participants, participant_data, participant_data_labels, alpha=data.alpha
+            participant_data, participant_data_labels, alpha=data.alpha
         )
 
     def run_fedci_iod(self, data, room_name):
@@ -164,13 +134,11 @@ class AlgorithmController(Controller):
 
         likelihood_ratio_tests = test_results
 
-        print(likelihood_ratio_tests)
-
         all_labels = sorted(list(server.schema.keys()))
 
         columns = ("ord", "X", "Y", "S", "pvalue")
         rows = []
-        for test in likelihood_ratio_tests:
+        for test in sorted(likelihood_ratio_tests):
             s_labels_string = ",".join(
                 sorted([str(all_labels.index(l) + 1) for l in test.conditioning_set])
             )
@@ -186,16 +154,32 @@ class AlgorithmController(Controller):
 
         df = pd.DataFrame(data=rows, columns=columns)
 
-        participant_data_labels = []
+        # let index start with 1
+        df.index += 1
+
+        participant_data_labels = {}
         participants = room.users
         for user in participants:
             conn = user2connection[user]
-            participant_data_labels.append(conn.algorithm_data.data_labels)
+            participant_data_labels[user] = conn.algorithm_data.data_schema.keys()
 
         try:
-            result, result_labels, _, _ = self.run_iod_on_combined_data(
-                df, all_labels, participants, participant_data_labels, alpha=alpha
-            )
+            if len(participant_data_labels) > 1:
+                result, result_labels, user_results, user_labels = (
+                    self.iod_r_call_on_combined_data(
+                        df,
+                        participant_data_labels,
+                        alpha=alpha,
+                    )
+                )
+            else:
+                result, result_labels, user_results, user_labels = (
+                    self.run_iod_on_user_data_fisher(
+                        [df],
+                        participant_data_labels,
+                        alpha=alpha,
+                    )
+                )
         except:
             raise HTTPException(detail="Failed to execute IOD", status_code=500)
 
@@ -205,7 +189,7 @@ class AlgorithmController(Controller):
         room.is_processing = False
         room.is_finished = True
 
-        return None, None, None, None
+        return result, result_labels, user_results, user_labels
 
     @post("/{room_name:str}")
     async def run(self, data: ExecutionRequest, room_name: str) -> Response:
@@ -257,6 +241,13 @@ class AlgorithmController(Controller):
             if user not in room.users:
                 del user_result[user]
 
+        # print("=" * 20)
+        # print(result)
+        # print(result_labels)
+        # print(user_result)
+        # print(user_labels)
+        # print("=" * 20)
+
         room.result = result
         room.result_labels = result_labels
         room.user_results = user_result
@@ -265,11 +256,6 @@ class AlgorithmController(Controller):
         room.is_finished = True
         rooms[room_name] = room
 
-        return Response(
-            media_type=MediaType.JSON,
-            content=RoomDetailsDTO(room, data.username),
-            status_code=200,
-        )
         return Response(
             media_type=MediaType.JSON,
             content=RoomDetailsDTO(room, data.username),
