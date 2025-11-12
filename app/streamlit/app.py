@@ -470,6 +470,8 @@ def run_local_fci():
     alpha = st.session_state["local_alpha_value"]
 
     pag, pag_labels = iod_r_call([df], [labels], alpha)
+    if len(pag) == 0:
+        return None
     pag = pag[0]
     pag_labels = pag_labels[0]
 
@@ -480,6 +482,60 @@ def run_local_fci():
                     """)
 
     return pag
+
+
+def get_pvals_fedci(df, max_conditioning_set_cardinality, fileid, filename):
+    server = fedci.Server({"1": fedci.Client(pl.from_pandas(df))})
+    test_results = server.run(max_cond_size=max_conditioning_set_cardinality)
+
+    all_labels = sorted(list(server.schema.keys()))
+
+    columns = ("ord", "X", "Y", "S", "pvalue")
+    rows = []
+    for test in sorted(test_results):
+        s_labels_string = ",".join(
+            sorted([str(all_labels.index(l) + 1) for l in test.conditioning_set])
+        )
+        rows.append(
+            (
+                len(test.conditioning_set),
+                all_labels.index(test.v0) + 1,
+                all_labels.index(test.v1) + 1,
+                s_labels_string,
+                test.p_val,
+            )
+        )
+
+    pval_df = pd.DataFrame(data=rows, columns=columns)
+    return pval_df
+
+
+def get_pvals_r(df, max_conditioning_set_cardinality, fileid, filename):
+    # Call R function
+    with (ro.default_converter + pandas2ri.converter).context():
+        # load local-ci script
+        ro.r["source"]("./scripts/local-ci.r")
+        # load function from R script
+        run_ci_test_f = ro.globalenv["run_ci_test"]
+
+        # converting it into r object for passing into r function
+        df_r = ro.conversion.get_conversion().py2rpy(df)
+        # Invoking the R function and getting the result
+        result = run_ci_test_f(
+            df_r, max_conditioning_set_cardinality, ci_result_dir + "/", fileid
+        )
+        # Converting it back to a pandas dataframe.
+        df_pvals = ro.conversion.get_conversion().rpy2py(result["citestResults"])
+        labels = list(result["labels"])
+
+        if any(
+            [a != b for a, b in zip(labels, st.session_state["data_schema"].keys())]
+        ):
+            st.error("""A major issue with the data labels occured.
+                        Please reload the page.
+                        If this error persists, contact an administrator.
+                        """)
+    return df_pvals
 
 
 def step_process_data():
@@ -509,32 +565,9 @@ def step_process_data():
             # Read data from state
             df = st.session_state["uploaded_data"]
 
-            # Call R function
-            with (ro.default_converter + pandas2ri.converter).context():
-                # load local-ci script
-                ro.r["source"]("./scripts/local-ci.r")
-                # load function from R script
-                run_ci_test_f = ro.globalenv["run_ci_test"]
-
-                # converting it into r object for passing into r function
-                df_r = ro.conversion.get_conversion().py2rpy(df)
-                # Invoking the R function and getting the result
-                result = run_ci_test_f(
-                    df_r, max_conditioning_set_cardinality, ci_result_dir + "/", fileid
-                )
-                # Converting it back to a pandas dataframe.
-                df_pvals = ro.conversion.get_conversion().rpy2py(
-                    result["citestResults"]
-                )
-                labels = list(result["labels"])
-
-                if any(
-                    [a != b for a, b in zip(labels, st.session_state["result_labels"])]
-                ):
-                    st.error("""A major issue with the data labels occured.
-                                Please reload the page.
-                                If this error persists, contact an administrator.
-                                """)
+            df_pvals = get_pvals_r(
+                df, max_conditioning_set_cardinality, fileid, filename
+            )
 
         st.session_state["result_pvals"] = df_pvals
 
@@ -548,6 +581,7 @@ def step_process_data():
     ):
         df_pvals = st.session_state["result_pvals"]
         schema = st.session_state["data_schema"]
+
         base64_df = base64.b64encode(pickle.dumps(df_pvals)).decode("utf-8")
         # send data and labels
         r = post_to_server(
@@ -629,17 +663,18 @@ def step_process_data():
 
             with st.spinner("Preparing PAG..."):
                 pag_mat = run_local_fci()
-                pag = data2graph(pag_mat, st.session_state["result_labels"])
 
-            _, col1, _ = st.columns((1, 1, 1))
-            col1.download_button(
-                label="Download PAG",
-                data=pag.pipe(format="png"),
-                file_name=f"local-pag-{fileid}.png",
-                mime="image/png",
-                use_container_width=True,
-            )
-            col1.graphviz_chart(pag)
+            if pag_mat is not None:
+                pag = data2graph(pag_mat, st.session_state["result_labels"])
+                _, col1, _ = st.columns((1, 1, 1))
+                col1.download_button(
+                    label="Download PAG",
+                    data=pag.pipe(format="png"),
+                    file_name=f"local-pag-{fileid}.png",
+                    mime="image/png",
+                    use_container_width=True,
+                )
+                col1.graphviz_chart(pag)
 
     return
 
@@ -1140,6 +1175,10 @@ def step_view_results():
             use_container_width=True,
         )
         cols = st.columns((1, 1, 1))
+        if len(result_graphs) == 0:
+            st.warning(
+                "Unable to generate a unified graph that adheres to all implied constraints"
+            )
         for i, g in enumerate(result_graphs):
             cols[i % 3].download_button(
                 label="Download PAG",

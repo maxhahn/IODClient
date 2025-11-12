@@ -107,7 +107,7 @@ class UserController(Controller):
 
         # data to pandas conversion
         df = pickle.loads(base64.b64decode(data.data.encode()))
-        schema = {k: str(v) for k, v in dict(pl.from_pandas(df).schema).items()}
+        schema = data.data_schema
         connections[data.id].algorithm_data = MetaAnalysisUserData(
             data_schema=schema, data=df
         )

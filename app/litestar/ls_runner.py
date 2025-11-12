@@ -107,7 +107,7 @@ class AlgorithmController(Controller):
             conn = user2connection[user]
             participant_data.append(conn.algorithm_data.data)
             participant_data_labels[user] = conn.algorithm_data.data_schema.keys()
-
+        print("XXX", conn.algorithm_data)
         return self.run_iod_on_user_data_fisher(
             participant_data, participant_data_labels, alpha=data.alpha
         )

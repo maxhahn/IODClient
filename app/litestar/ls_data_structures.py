@@ -195,6 +195,7 @@ class JoinRoomRequest(BasicRequest):
 
 @dataclass
 class MetaAnalysisDataSubmissionRequest(BasicRequest):
+    data_schema: Dict[str, str]
     data: str
 
 
