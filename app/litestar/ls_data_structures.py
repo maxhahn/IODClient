@@ -148,6 +148,7 @@ class RoomDetailsDTO:
         self.is_finished = room.is_finished
         self.is_protected = room.password is not None
         self.users = sorted(list(room.users))
+        self.user_provided_schema = room.user_provided_schema
         self.result = room.result
         self.result_labels = room.result_labels
         self.private_result = (

@@ -311,7 +311,7 @@ def step_upload_data():
 
     no_files_uploaded_yet = len(st.session_state["existing_raw_data"]) == 0
     st.write("Select previously uploaded data:")
-    col1, col2 = st.columns((6, 1))
+    col1, col2, col3 = st.columns((5, 1, 1))
     previously_uploaded_file = col1.selectbox(
         "Select previously uploaded data:",
         st.session_state["existing_raw_data"],
@@ -327,7 +327,13 @@ def step_upload_data():
         else "Please select the file you want to work with",
     )
 
-    if col2.button(
+    do_reload_data = col2.button(
+        ":recycle:",
+        help="Reload data from disk",
+        use_container_width=True,
+    )
+
+    if col3.button(
         ":wastebasket:",
         help="Remove all local data. THIS INCLUDES PROCESSED DATA AND PAGs.",
         use_container_width=True,
@@ -343,26 +349,27 @@ def step_upload_data():
     ):
         return
 
-    # read uploaded file into session state
-    if uploaded_file is not None:
-        filename = uploaded_file.name
-        if filename.endswith(".csv"):
-            df = pd.read_csv(uploaded_file)
-            filename = filename[:-4] + ".parquet"
-        elif filename.endswith(".parquet"):
-            df = pd.read_parquet(uploaded_file)
-        else:
-            raise Exception("Cannot handle files of the given type")
-        df.to_parquet(f"{upload_dir}/{filename}", index=False)
+    if st.session_state["uploaded_data"] is None or do_reload_data:
+        # read uploaded file into session state
+        if uploaded_file is not None:
+            filename = uploaded_file.name
+            if filename.endswith(".csv"):
+                df = pd.read_csv(uploaded_file)
+                filename = filename[:-4] + ".parquet"
+            elif filename.endswith(".parquet"):
+                df = pd.read_parquet(uploaded_file)
+            else:
+                raise Exception("Cannot handle files of the given type")
+            df.to_parquet(f"{upload_dir}/{filename}", index=False)
 
-        st.session_state["uploaded_data"] = df
-        st.session_state["uploaded_data_filename"] = filename
-    elif previously_uploaded_file is not None:
-        filename = previously_uploaded_file
-        df = pd.read_parquet(f"{upload_dir}/{previously_uploaded_file}")
+            st.session_state["uploaded_data"] = df
+            st.session_state["uploaded_data_filename"] = filename
+        elif previously_uploaded_file is not None:
+            filename = previously_uploaded_file
+            df = pd.read_parquet(f"{upload_dir}/{previously_uploaded_file}")
 
-        st.session_state["uploaded_data"] = df
-        st.session_state["uploaded_data_filename"] = filename
+            st.session_state["uploaded_data"] = df
+            st.session_state["uploaded_data_filename"] = filename
 
     # Reset when new file is uploaded
     st.session_state["data_schema"] = {
@@ -375,9 +382,59 @@ def step_upload_data():
     st.session_state["result_pvals"] = None
 
     if st.session_state["uploaded_data"] is not None:
+        df = st.session_state["uploaded_data"]
         with st.expander("View Data"):
-            df = st.session_state["uploaded_data"]
             st.dataframe(dataframe_explorer(df), use_container_width=True)
+        dtypes = ["continuous", "ordinal", "multinomial", "binomial"]
+        dtype_mapping = {
+            pl.Float32: dtypes[0],
+            pl.Float64: dtypes[0],
+            pl.Int32: dtypes[1],
+            pl.Int64: dtypes[1],
+            pl.String: dtypes[2],
+            pl.Boolean: dtypes[3],
+        }
+        with st.expander("Cast Datatypes"):
+            df_polars = pl.from_pandas(df)
+            dtype_selection = {}
+            for field_name, field_dtype in sorted(
+                df_polars.schema.items(), key=lambda x: x[0]
+            ):
+                col1, col2 = st.columns([1, 4])
+                col1.write(field_name)
+                curr_dtype = dtype_mapping[field_dtype]
+                selection = col2.selectbox(
+                    "Choose DType",
+                    dtypes,
+                    index=dtypes.index(curr_dtype),
+                    label_visibility="collapsed",
+                    key=f"dtype-select-{field_name}",
+                )
+                if selection != curr_dtype:
+                    dtype_selection[field_name] = selection
+            if st.button("Cast!"):
+                failures = []
+                inv_dtype_mapping = {v: k for k, v in dtype_mapping.items()}
+                for field_name, target_dtype in dtype_selection.items():
+                    try:
+                        df_polars = df_polars.with_columns(
+                            pl.col(field_name).cast(inv_dtype_mapping[target_dtype])
+                        )
+                    except:
+                        failures.append((field_name, target_dtype))
+                if len(failures) > 0:
+                    warning = ""
+                    for f, d in failures:
+                        warning += f"Failed to cast {f} to type {d}\n"
+                    st.warning(warning)
+                st.session_state["uploaded_data"] = df_polars.to_pandas()
+                st.session_state["data_schema"] = {
+                    k: str(v)
+                    for k, v in dict(
+                        pl.from_pandas(st.session_state["uploaded_data"]).schema
+                    ).items()
+                }
+                st.rerun()
 
 
 # ,------.            ,--.              ,------.                                          ,--.
