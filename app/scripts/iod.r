@@ -8,6 +8,26 @@ library(doFuture)
 library(gtools)
 library(rIOD)
 
+run_ci_test <- function(data, max_cond_set_cardinality, filedir, filename) {
+
+  data[] <- lapply(data, function(x) if (is.character(x)) as.factor(x) else x)
+
+  labels <- colnames(data)
+  indepTest <- mixedCITest
+  suffStat <- getMixedCISuffStat(dat = data,
+                                 vars_names = labels,
+                                 covs_names = c())
+  citestResults <- getAllCITestResults(data,
+                                      indepTest,
+                                      suffStat,
+                                      m.max=max_cond_set_cardinality,
+                                      saveFiles=TRUE,
+                                      fileid=filename,
+                                      citestResults_folder=filedir)
+  result <- list(citestResults=citestResults, labels=labels)
+  result
+}
+
 
 labelList <- list()
 

@@ -29,6 +29,9 @@ from streamlit_extras.dataframe_explorer import dataframe_explorer
 
 import fedci
 
+# if "r_env" not in st.session_state:
+#    st.session_state["r_env"] = ro.r["new.env"]()
+
 # TODO: Make alpha in IOD configurable (server)
 # TODO: Make m.max configurable
 
@@ -270,7 +273,9 @@ def step_check_in_to_server():
                 del st.session_state["fedci_client_thread"]
                 st.session_state["fedci_client_thread"] = None
 
-            client_port = 16016
+            import random
+
+            client_port = random.randint(16016, 16096)  # 16016
             client = fedci.ProxyClient(
                 pl.from_pandas(st.session_state["uploaded_data"])
             )
@@ -447,20 +452,31 @@ def step_upload_data():
 
 def iod_r_call(dfs, client_labels, alpha=0.05, procedure="original"):
     with (ro.default_converter + pandas2ri.converter).context():
-        ro.r["source"]("./scripts/iod.r")
+        # load r funcs
+        ro.r["source"]("./scripts/iod.r")  # , local=st.session_state["r_env"])
         aggregate_ci_results_f = ro.globalenv["aggregate_ci_results"]
 
         lvs = []
+        print("aggregate_ci_results_f", "0")
         r_dfs = [ro.conversion.get_conversion().py2rpy(df) for df in dfs]
         label_list = [ro.StrVector(v) for v in client_labels]
-
+        print("aggregate_ci_results_f", "1")
+        print(label_list)
+        for df in dfs:
+            print(df)
         result = aggregate_ci_results_f(label_list, r_dfs, alpha, procedure)
-
+        print(result.keys())
+        print("aggregate_ci_results_f", "2")
         g_pag_list = [x[1].tolist() for x in result["G_PAG_List"].items()]
         g_pag_labels = [
             list([str(a) for a in x[1]]) for x in result["G_PAG_Label_List"].items()
         ]
-
+        print(g_pag_list)
+        print(g_pag_labels)
+        # Clear workspace
+        ro.r("rm(list = ls())")
+        # Trigger R garbage collection
+        ro.r("gc()")
     return g_pag_list, g_pag_labels
 
 
@@ -513,21 +529,25 @@ def get_pvals_fedci(df, max_conditioning_set_cardinality, fileid, filename):
 def get_pvals_r(df, max_conditioning_set_cardinality, fileid, filename):
     # Call R function
     with (ro.default_converter + pandas2ri.converter).context():
-        # load local-ci script
-        ro.r["source"]("./scripts/local-ci.r")
-        # load function from R script
+        ro.r["source"]("./scripts/iod.r")  # , local=st.session_state["r_env"])
         run_ci_test_f = ro.globalenv["run_ci_test"]
-
         # converting it into r object for passing into r function
+        print("run_ci_test_f", "0")
         df_r = ro.conversion.get_conversion().py2rpy(df)
         # Invoking the R function and getting the result
+        print("run_ci_test_f", "1")
         result = run_ci_test_f(
             df_r, max_conditioning_set_cardinality, ci_result_dir + "/", fileid
         )
+        print("run_ci_test_f", "2")
         # Converting it back to a pandas dataframe.
         df_pvals = ro.conversion.get_conversion().rpy2py(result["citestResults"])
         labels = list(result["labels"])
-
+        print("run_ci_test_f", "3")
+        # Clear workspace
+        ro.r("rm(list = ls())")
+        # Trigger R garbage collection
+        ro.r("gc()")
         if any(
             [a != b for a, b in zip(labels, st.session_state["data_schema"].keys())]
         ):
@@ -1104,6 +1124,8 @@ arrow_type_lookup = {1: "odot", 2: "normal", 3: "none"}
 
 def data2graph(data, labels):
     graph = graphviz.Digraph(format="png")
+    for label in labels:
+        graph.node(label)
     for i in range(len(data)):
         for j in range(i + 1, len(data)):
             arrhead = data[i][j]

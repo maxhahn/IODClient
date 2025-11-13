@@ -20,20 +20,21 @@ from ls_data_structures import (
 from ls_env import connections, rooms, user2connection
 from ls_helpers import validate_user_request
 from rpy2.robjects import numpy2ri, pandas2ri
+from streamlit.elements.lib.image_utils import PILImage
 
 import fedci
+
+ro.r["source"]("./scripts/iod.r")
 
 
 class AlgorithmController(Controller):
     path = "/run"
 
     def run_iod_on_user_data_fisher(self, dfs, client_labels, alpha):
-        ro.r["source"]("./scripts/iod.r")
-        aggregate_ci_results_f = ro.globalenv["aggregate_ci_results"]
-
         with (
             ro.default_converter + pandas2ri.converter + numpy2ri.converter
         ).context():
+            aggregate_ci_results_f = ro.globalenv["aggregate_ci_results"]
             r_dfs = [ro.conversion.get_conversion().py2rpy(df) for df in dfs]
             # r_dfs = ro.ListVector(r_dfs)
             users = client_labels.keys()
@@ -52,20 +53,21 @@ class AlgorithmController(Controller):
                 for x in result["Gi_PAG_Label_List"].items()
             ]
             gi_pag_list = [np.array(pag).astype(int).tolist() for pag in gi_pag_list]
-        return (
-            g_pag_list,
-            g_pag_labels,
-            {u: r for u, r in zip(users, gi_pag_list)},
-            {u: l for u, l in zip(users, gi_pag_labels)},
-        )
+
+            user_pags = {u: r for u, r in zip(users, gi_pag_list)}
+            user_labels = {u: l for u, l in zip(users, gi_pag_labels)}
+            print("WRONG CALL")
+            print(g_pag_list)
+            print(g_pag_labels)
+            print(user_pags)
+            print(user_labels)
+        return (g_pag_list, g_pag_labels, user_pags, user_labels)
 
     def iod_r_call_on_combined_data(
         self, df, client_labels, alpha=0.05, procedure="original"
     ):
         with (ro.default_converter + pandas2ri.converter).context():
-            ro.r["source"]("./scripts/iod.r")
             iod_on_ci_data_f = ro.globalenv["iod_on_ci_data"]
-
             labels = sorted(list(set().union(*(client_labels.values()))))
 
             suff_stat = [
@@ -93,6 +95,11 @@ class AlgorithmController(Controller):
 
             user_pags = {u: r for u, r in zip(users, gi_pag_list)}
             user_labels = {u: l for u, l in zip(users, gi_pag_labels)}
+
+            print(g_pag_list)
+            print(g_pag_labels)
+            print(user_pags)
+            print(user_labels)
 
         return g_pag_list, g_pag_labels, user_pags, user_labels
 
