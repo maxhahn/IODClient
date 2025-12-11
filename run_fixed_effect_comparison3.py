@@ -78,34 +78,15 @@ def is_m_separable(pag, labels):
 
 
 # Slide example
-# graph_type = "SLIDES_MIXED"
-# var_types = {
-#     "A": "binary",
-#     "B": "continuous",
-#     "C": "nominal",
-#     "D": "ordinal",
-#     "E": "continuous",
-# }
-# var_levels = [2, 1, 4, 4, 1]
-# TRUE_PAG = np.array(
-#     [
-#         [0, 0, 2, 2, 0],
-#         [0, 0, 2, 0, 0],
-#         [2, 1, 0, 2, 2],
-#         [2, 0, 3, 0, 2],
-#         [0, 0, 3, 3, 0],
-#     ]
-# )
-
-graph_type = "SLIDES"
+graph_type = "SLIDES_MIXED"
 var_types = {
-    "A": "continuous",
+    "A": "binary",
     "B": "continuous",
-    "C": "continuous",
-    "D": "continuous",
+    "C": "nominal",
+    "D": "ordinal",
     "E": "continuous",
 }
-var_levels = [1, 1, 1, 1, 1]
+var_levels = [2, 1, 4, 4, 1]
 TRUE_PAG = np.array(
     [
         [0, 0, 2, 2, 0],
@@ -115,6 +96,25 @@ TRUE_PAG = np.array(
         [0, 0, 3, 3, 0],
     ]
 )
+
+# graph_type = "SLIDES"
+# var_types = {
+#     "A": "continuous",
+#     "B": "continuous",
+#     "C": "continuous",
+#     "D": "continuous",
+#     "E": "continuous",
+# }
+# var_levels = [1, 1, 1, 1, 1]
+# TRUE_PAG = np.array(
+#     [
+#         [0, 0, 2, 2, 0],
+#         [0, 0, 2, 0, 0],
+#         [2, 1, 0, 2, 2],
+#         [2, 0, 3, 0, 2],
+#         [0, 0, 3, 3, 0],
+#     ]
+# )
 
 # Simple examples
 # var_types = {
@@ -352,7 +352,7 @@ SEEDS = range(seed_start, seed_start + num_runs)
 SAMPLES = [100, 200, 300, 400, 500, 750, 1000, 1500, 2000, 2500, 3000]
 # SAMPLES = [5000, 10000]
 
-NUM_CLIENTS = 10
+NUM_CLIENTS = 4
 
 var_levels.append(NUM_CLIENTS)
 var_types["CLIENT"] = "nominal"
@@ -394,8 +394,8 @@ for seed in tqdm(SEEDS, position=0, leave=True):
             num_samples=pl.lit(num_samples),
             graph=pl.lit(graph_type),
             partitions=pl.lit(NUM_CLIENTS),
-            # vars=list(var_types.keys()),
-            # var_types=list(var_types.values()),
+            vars=list(var_types.keys()),
+            var_types=list(var_types.values()),
         )
 
         if not os.path.exists(f"{data_dir}/{graph_type}"):

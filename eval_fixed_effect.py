@@ -30,7 +30,7 @@ df_base = pl.read_parquet(f"{folder}/*.parquet")
 
 graph = None  # "SLIDES"
 num_samples = None
-partitions = 4
+partitions = None
 x_type = None
 y_type = None
 
