@@ -469,7 +469,7 @@ def show_msep_agreement(df_base):
             _df = df.filter((pl.col('num_samples')==num_s)&(pl.col('partitions')==num_p))
             _df = _df.group_by('MSep', cs.contains('pvalue')).len().sort('MSep', cs.contains('pvalue'))
             print(f"Agreement Table for {num_s} samples over {num_p} partitions")
-            print(_df.filter(pl.col('fisher_pvalue')!=pl.col('fedci_pvalue')))
+            print(_df)#.filter(pl.col('fisher_pvalue')!=pl.col('fedci_pvalue')))
 
 
 def show_difference_to_msep(df_base):
@@ -711,5 +711,32 @@ shape: (8, 5)
 │ true  ┆ true          ┆ false         ┆ true         ┆ 7   │ <-
 │ true  ┆ true          ┆ true          ┆ false        ┆ 10  │
 └───────┴───────────────┴───────────────┴──────────────┴─────┘
+
+
+=== FULL TABLE
+Agreement Table for 3000 samples over 4 partitions
+shape: (16, 5)
+┌───────┬───────────────┬───────────────┬──────────────┬──────┐
+│ MSep  ┆ pooled_pvalue ┆ fisher_pvalue ┆ fedci_pvalue ┆ len  │
+│ ---   ┆ ---           ┆ ---           ┆ ---          ┆ ---  │
+│ bool  ┆ bool          ┆ bool          ┆ bool         ┆ u32  │
+╞═══════╪═══════════════╪═══════════════╪══════════════╪══════╡
+│ false ┆ false         ┆ false         ┆ false        ┆ 193  │
+│ false ┆ false         ┆ false         ┆ true         ┆ 46   │
+│ false ┆ false         ┆ true          ┆ false        ┆ 9    │
+│ false ┆ false         ┆ true          ┆ true         ┆ 310  │
+│ false ┆ true          ┆ false         ┆ false        ┆ 670  │
+│ false ┆ true          ┆ false         ┆ true         ┆ 190  │
+│ false ┆ true          ┆ true          ┆ false        ┆ 36   │
+│ false ┆ true          ┆ true          ┆ true         ┆ 5746 │
+│ true  ┆ false         ┆ false         ┆ false        ┆ 10   │
+│ true  ┆ false         ┆ false         ┆ true         ┆ 15   │
+│ true  ┆ false         ┆ true          ┆ false        ┆ 32   │
+│ true  ┆ false         ┆ true          ┆ true         ┆ 536  │
+│ true  ┆ true          ┆ false         ┆ false        ┆ 7    │
+│ true  ┆ true          ┆ false         ┆ true         ┆ 7    │
+│ true  ┆ true          ┆ true          ┆ false        ┆ 10   │
+│ true  ┆ true          ┆ true          ┆ true         ┆ 183  │
+└───────┴───────────────┴───────────────┴──────────────┴──────┘
 
 """
