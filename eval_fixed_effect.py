@@ -638,9 +638,9 @@ shape: (8, 5)
 │ ---   ┆ ---           ┆ ---           ┆ ---          ┆ --- │
 │ bool  ┆ bool          ┆ bool          ┆ bool         ┆ u32 │
 ╞═══════╪═══════════════╪═══════════════╪══════════════╪═════╡
-│ false ┆ false         ┆ false         ┆ true         ┆ 94  │
+│ false ┆ false         ┆ false         ┆ true         ┆ 94  │ <-
 │ false ┆ false         ┆ true          ┆ false        ┆ 27  │
-│ false ┆ true          ┆ false         ┆ true         ┆ 219 │
+│ false ┆ true          ┆ false         ┆ true         ┆ 219 │ <-
 │ false ┆ true          ┆ true          ┆ false        ┆ 42  │
 │ true  ┆ false         ┆ false         ┆ true         ┆ 13  │
 │ true  ┆ false         ┆ true          ┆ false        ┆ 17  │
@@ -654,9 +654,9 @@ shape: (8, 5)
 │ ---   ┆ ---           ┆ ---           ┆ ---          ┆ --- │
 │ bool  ┆ bool          ┆ bool          ┆ bool         ┆ u32 │
 ╞═══════╪═══════════════╪═══════════════╪══════════════╪═════╡
-│ false ┆ false         ┆ false         ┆ true         ┆ 71  │
+│ false ┆ false         ┆ false         ┆ true         ┆ 71  │ <-
 │ false ┆ false         ┆ true          ┆ false        ┆ 18  │
-│ false ┆ true          ┆ false         ┆ true         ┆ 240 │
+│ false ┆ true          ┆ false         ┆ true         ┆ 240 │ <-
 │ false ┆ true          ┆ true          ┆ false        ┆ 28  │
 │ true  ┆ false         ┆ false         ┆ true         ┆ 23  │
 │ true  ┆ false         ┆ true          ┆ false        ┆ 16  │
@@ -670,9 +670,9 @@ shape: (8, 5)
 │ ---   ┆ ---           ┆ ---           ┆ ---          ┆ --- │
 │ bool  ┆ bool          ┆ bool          ┆ bool         ┆ u32 │
 ╞═══════╪═══════════════╪═══════════════╪══════════════╪═════╡
-│ false ┆ false         ┆ false         ┆ true         ┆ 66  │
+│ false ┆ false         ┆ false         ┆ true         ┆ 66  │ <-
 │ false ┆ false         ┆ true          ┆ false        ┆ 12  │
-│ false ┆ true          ┆ false         ┆ true         ┆ 191 │
+│ false ┆ true          ┆ false         ┆ true         ┆ 191 │ <-
 │ false ┆ true          ┆ true          ┆ false        ┆ 50  │
 │ true  ┆ false         ┆ false         ┆ true         ┆ 27  │
 │ true  ┆ false         ┆ true          ┆ false        ┆ 16  │
@@ -686,9 +686,9 @@ shape: (8, 5)
 │ ---   ┆ ---           ┆ ---           ┆ ---          ┆ --- │
 │ bool  ┆ bool          ┆ bool          ┆ bool         ┆ u32 │
 ╞═══════╪═══════════════╪═══════════════╪══════════════╪═════╡
-│ false ┆ false         ┆ false         ┆ true         ┆ 50  │
+│ false ┆ false         ┆ false         ┆ true         ┆ 50  │ <-
 │ false ┆ false         ┆ true          ┆ false        ┆ 11  │
-│ false ┆ true          ┆ false         ┆ true         ┆ 178 │
+│ false ┆ true          ┆ false         ┆ true         ┆ 178 │ <-
 │ false ┆ true          ┆ true          ┆ false        ┆ 39  │
 │ true  ┆ false         ┆ false         ┆ true         ┆ 16  │
 │ true  ┆ false         ┆ true          ┆ false        ┆ 13  │
@@ -702,13 +702,13 @@ shape: (8, 5)
 │ ---   ┆ ---           ┆ ---           ┆ ---          ┆ --- │
 │ bool  ┆ bool          ┆ bool          ┆ bool         ┆ u32 │
 ╞═══════╪═══════════════╪═══════════════╪══════════════╪═════╡
-│ false ┆ false         ┆ false         ┆ true         ┆ 46  │
+│ false ┆ false         ┆ false         ┆ true         ┆ 46  │ <-
 │ false ┆ false         ┆ true          ┆ false        ┆ 9   │
-│ false ┆ true          ┆ false         ┆ true         ┆ 190 │
+│ false ┆ true          ┆ false         ┆ true         ┆ 190 │ <-
 │ false ┆ true          ┆ true          ┆ false        ┆ 36  │
-│ true  ┆ false         ┆ false         ┆ true         ┆ 15  │
+│ true  ┆ false         ┆ false         ┆ true         ┆ 15  │ <-
 │ true  ┆ false         ┆ true          ┆ false        ┆ 32  │
-│ true  ┆ true          ┆ false         ┆ true         ┆ 7   │
+│ true  ┆ true          ┆ false         ┆ true         ┆ 7   │ <-
 │ true  ┆ true          ┆ true          ┆ false        ┆ 10  │
 └───────┴───────────────┴───────────────┴──────────────┴─────┘
 
