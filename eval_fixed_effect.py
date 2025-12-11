@@ -22,6 +22,7 @@ pl.Config.set_tbl_rows(40)
 image_folder = "images/fixed_effect_images"
 
 folder = "experiments/fixed_effect_data/SLIDES"
+#folder = "experiments/fixed_effect_data/SLIDES_MIXED"
 
 
 alpha = 0.05
@@ -29,7 +30,7 @@ df_base = pl.read_parquet(f"{folder}/*.parquet")
 
 graph = None  # "SLIDES"
 num_samples = None
-partitions = None
+partitions = 4
 x_type = None
 y_type = None
 
@@ -102,7 +103,6 @@ def show_correlation_to_msep(df_base):
             df_fed, on=identifiers, how='left'
         )
 
-    print(_df.sort(identifiers))
     df_unpivot = _df.unpivot(
         on=["Pooled", "Fisher", "FedCI"],
         index=identifiers,
@@ -388,9 +388,6 @@ def show_msep_agreement(df_base):
     )
     df_weighted = df_weighted.drop(cs.ends_with('_indep')).drop('total_len')
 
-
-    print(df_weighted)
-
     df_unpivot = df_weighted.unpivot(
         on=["Pooled", "Fisher", "FedCI"],
         index=identifiers,
@@ -464,6 +461,15 @@ def show_msep_agreement(df_base):
             bbox_inches="tight",
             dpi=300,
         )
+
+    df = df_base.with_columns(cs.contains("pvalue") >= alpha)
+    df = df.with_columns(cs.contains("pvalue") == pl.col("MSep"))
+    for num_p in df['partitions'].unique().to_list():
+        for num_s in df['num_samples'].unique().to_list():
+            _df = df.filter((pl.col('num_samples')==num_s)&(pl.col('partitions')==num_p))
+            _df = _df.group_by('MSep', cs.contains('pvalue')).len().sort('MSep', cs.contains('pvalue'))
+            print(f"Agreement Table for {num_s} samples over {num_p} partitions")
+            print(_df.filter(pl.col('fisher_pvalue')!=pl.col('fedci_pvalue')))
 
 
 def show_difference_to_msep(df_base):
@@ -621,3 +627,89 @@ show_msep_versus_prediction_by_partition(df_base)
 show_incorrect_in_perc_based_on_indep_by_partition(df_base)
 # show_incorrect_in_perc_based_on_indep_by_partition_with_ord(df_base)
 # show_correctness_on_bad_fisher_predictions(df_base)
+
+
+"""
+
+Agreement Table for 1000 samples over 4 partitions
+shape: (8, 5)
+┌───────┬───────────────┬───────────────┬──────────────┬─────┐
+│ MSep  ┆ pooled_pvalue ┆ fisher_pvalue ┆ fedci_pvalue ┆ len │
+│ ---   ┆ ---           ┆ ---           ┆ ---          ┆ --- │
+│ bool  ┆ bool          ┆ bool          ┆ bool         ┆ u32 │
+╞═══════╪═══════════════╪═══════════════╪══════════════╪═════╡
+│ false ┆ false         ┆ false         ┆ true         ┆ 94  │
+│ false ┆ false         ┆ true          ┆ false        ┆ 27  │
+│ false ┆ true          ┆ false         ┆ true         ┆ 219 │
+│ false ┆ true          ┆ true          ┆ false        ┆ 42  │
+│ true  ┆ false         ┆ false         ┆ true         ┆ 13  │
+│ true  ┆ false         ┆ true          ┆ false        ┆ 17  │
+│ true  ┆ true          ┆ false         ┆ true         ┆ 15  │
+│ true  ┆ true          ┆ true          ┆ false        ┆ 6   │
+└───────┴───────────────┴───────────────┴──────────────┴─────┘
+Agreement Table for 1500 samples over 4 partitions
+shape: (8, 5)
+┌───────┬───────────────┬───────────────┬──────────────┬─────┐
+│ MSep  ┆ pooled_pvalue ┆ fisher_pvalue ┆ fedci_pvalue ┆ len │
+│ ---   ┆ ---           ┆ ---           ┆ ---          ┆ --- │
+│ bool  ┆ bool          ┆ bool          ┆ bool         ┆ u32 │
+╞═══════╪═══════════════╪═══════════════╪══════════════╪═════╡
+│ false ┆ false         ┆ false         ┆ true         ┆ 71  │
+│ false ┆ false         ┆ true          ┆ false        ┆ 18  │
+│ false ┆ true          ┆ false         ┆ true         ┆ 240 │
+│ false ┆ true          ┆ true          ┆ false        ┆ 28  │
+│ true  ┆ false         ┆ false         ┆ true         ┆ 23  │
+│ true  ┆ false         ┆ true          ┆ false        ┆ 16  │
+│ true  ┆ true          ┆ false         ┆ true         ┆ 10  │
+│ true  ┆ true          ┆ true          ┆ false        ┆ 9   │
+└───────┴───────────────┴───────────────┴──────────────┴─────┘
+Agreement Table for 2000 samples over 4 partitions
+shape: (8, 5)
+┌───────┬───────────────┬───────────────┬──────────────┬─────┐
+│ MSep  ┆ pooled_pvalue ┆ fisher_pvalue ┆ fedci_pvalue ┆ len │
+│ ---   ┆ ---           ┆ ---           ┆ ---          ┆ --- │
+│ bool  ┆ bool          ┆ bool          ┆ bool         ┆ u32 │
+╞═══════╪═══════════════╪═══════════════╪══════════════╪═════╡
+│ false ┆ false         ┆ false         ┆ true         ┆ 66  │
+│ false ┆ false         ┆ true          ┆ false        ┆ 12  │
+│ false ┆ true          ┆ false         ┆ true         ┆ 191 │
+│ false ┆ true          ┆ true          ┆ false        ┆ 50  │
+│ true  ┆ false         ┆ false         ┆ true         ┆ 27  │
+│ true  ┆ false         ┆ true          ┆ false        ┆ 16  │
+│ true  ┆ true          ┆ false         ┆ true         ┆ 11  │
+│ true  ┆ true          ┆ true          ┆ false        ┆ 11  │
+└───────┴───────────────┴───────────────┴──────────────┴─────┘
+Agreement Table for 2500 samples over 4 partitions
+shape: (8, 5)
+┌───────┬───────────────┬───────────────┬──────────────┬─────┐
+│ MSep  ┆ pooled_pvalue ┆ fisher_pvalue ┆ fedci_pvalue ┆ len │
+│ ---   ┆ ---           ┆ ---           ┆ ---          ┆ --- │
+│ bool  ┆ bool          ┆ bool          ┆ bool         ┆ u32 │
+╞═══════╪═══════════════╪═══════════════╪══════════════╪═════╡
+│ false ┆ false         ┆ false         ┆ true         ┆ 50  │
+│ false ┆ false         ┆ true          ┆ false        ┆ 11  │
+│ false ┆ true          ┆ false         ┆ true         ┆ 178 │
+│ false ┆ true          ┆ true          ┆ false        ┆ 39  │
+│ true  ┆ false         ┆ false         ┆ true         ┆ 16  │
+│ true  ┆ false         ┆ true          ┆ false        ┆ 13  │
+│ true  ┆ true          ┆ false         ┆ true         ┆ 10  │
+│ true  ┆ true          ┆ true          ┆ false        ┆ 7   │
+└───────┴───────────────┴───────────────┴──────────────┴─────┘
+Agreement Table for 3000 samples over 4 partitions
+shape: (8, 5)
+┌───────┬───────────────┬───────────────┬──────────────┬─────┐
+│ MSep  ┆ pooled_pvalue ┆ fisher_pvalue ┆ fedci_pvalue ┆ len │
+│ ---   ┆ ---           ┆ ---           ┆ ---          ┆ --- │
+│ bool  ┆ bool          ┆ bool          ┆ bool         ┆ u32 │
+╞═══════╪═══════════════╪═══════════════╪══════════════╪═════╡
+│ false ┆ false         ┆ false         ┆ true         ┆ 46  │
+│ false ┆ false         ┆ true          ┆ false        ┆ 9   │
+│ false ┆ true          ┆ false         ┆ true         ┆ 190 │
+│ false ┆ true          ┆ true          ┆ false        ┆ 36  │
+│ true  ┆ false         ┆ false         ┆ true         ┆ 15  │
+│ true  ┆ false         ┆ true          ┆ false        ┆ 32  │
+│ true  ┆ true          ┆ false         ┆ true         ┆ 7   │
+│ true  ┆ true          ┆ true          ┆ false        ┆ 10  │
+└───────┴───────────────┴───────────────┴──────────────┴─────┘
+
+"""
