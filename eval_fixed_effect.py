@@ -1,18 +1,14 @@
 import holoviews as hv
-from holoviews import opts
 import hvplot
 import hvplot.polars
+from holoviews import opts
 
-hvplot.extension('matplotlib')
-hv.extension('matplotlib')
-
-import polars as pl
-import polars.selectors as cs
-
-
+hvplot.extension("matplotlib")
+hv.extension("matplotlib")
 
 import matplotlib.pyplot as plt
-
+import polars as pl
+import polars.selectors as cs
 
 plt.rcParams.update({"svg.fonttype": "none"})
 
@@ -21,8 +17,8 @@ pl.Config.set_tbl_rows(40)
 
 image_folder = "images/fixed_effect_images"
 
-folder = "experiments/fixed_effect_data/SLIDES"
-#folder = "experiments/fixed_effect_data/SLIDES_MIXED"
+folder = "experiments/fixed_effect_data/sim"
+# folder = "experiments/fixed_effect_data/SLIDES_MIXED"
 
 
 alpha = 0.05
@@ -60,6 +56,8 @@ def show_null_counts_in_pvalues(df_base):
     df = df_base
     print(df.select(cs.contains("pvalue").null_count() / pl.len()))
 
+    # print(df.filter(pl.col("fisher_pvalue").is_null()).select(cs.contains("pvalue")))
+
 
 def show_correlation_to_msep(df_base):
     print("== Correlation to MSep")
@@ -93,14 +91,21 @@ def show_correlation_to_msep(df_base):
         {"p_value_correlation": "FedCI"}
     )
     if len(identifiers) == 0:
-        _df = pl.concat([df_fisher[0].select('Pooled'), df_fisher[0].select('Fisher'), df_fed[0].select('FedCI')], how='horizontal')
+        _df = pl.concat(
+            [
+                df_fisher[0].select("Pooled"),
+                df_fisher[0].select("Fisher"),
+                df_fed[0].select("FedCI"),
+            ],
+            how="horizontal",
+        )
     else:
-        _df = df.select(identifiers).unique().join(
-            df_pooled, on=identifiers, how='left'
-        ).join(
-            df_fisher, on=identifiers, how='left'
-        ).join(
-            df_fed, on=identifiers, how='left'
+        _df = (
+            df.select(identifiers)
+            .unique()
+            .join(df_pooled, on=identifiers, how="left")
+            .join(df_fisher, on=identifiers, how="left")
+            .join(df_fed, on=identifiers, how="left")
         )
 
     df_unpivot = _df.unpivot(
@@ -114,7 +119,7 @@ def show_correlation_to_msep(df_base):
         {"num_samples": "\# Samples", "correlation": "Correlation"}
     )
 
-    for i in df['partitions'].unique().to_list():
+    for i in df["partitions"].unique().to_list():
         _plot = (
             df_unpivot.filter(pl.col("partitions") == i)
             .sort("Method", "\# Samples")
@@ -158,10 +163,10 @@ def show_correlation_to_msep(df_base):
         )
         _plot = _plot.opts(
             opts.Curve(
-                color=hv.Cycle(['#1f77b4', '#d62728', '#2ca02c']),  # Blue, Red, Green
-                linestyle=hv.Cycle(['solid', 'dashed', 'dotted']),
+                color=hv.Cycle(["#1f77b4", "#d62728", "#2ca02c"]),  # Blue, Red, Green
+                linestyle=hv.Cycle(["solid", "dashed", "dotted"]),
                 alpha=1,
-                backend='matplotlib'
+                backend="matplotlib",
             ),
         )
 
@@ -176,6 +181,7 @@ def show_correlation_to_msep(df_base):
             bbox_inches="tight",
             dpi=300,
         )
+
 
 def show_bad_fisher_predictions(df_base):
     df = df_base
@@ -200,13 +206,15 @@ def show_msep_agreement(df_base):
 
     identifiers = ["partitions", "num_samples"]
 
-    df_dep = df_dep.group_by(identifiers).agg(cs.contains('pvalue').mean(), pl.len())
+    df_dep = df_dep.group_by(identifiers).agg(cs.contains("pvalue").mean(), pl.len())
 
-    df_dep = df_dep.rename({
-        'pooled_pvalue': 'Pooled',
-        'fisher_pvalue': 'Fisher',
-        'fedci_pvalue': 'FedCI',
-    })
+    df_dep = df_dep.rename(
+        {
+            "pooled_pvalue": "Pooled",
+            "fisher_pvalue": "Fisher",
+            "fedci_pvalue": "FedCI",
+        }
+    )
 
     df_unpivot = df_dep.unpivot(
         on=["Pooled", "Fisher", "FedCI"],
@@ -219,7 +227,7 @@ def show_msep_agreement(df_base):
         {"num_samples": "\# Samples", "accuracy": "Decision Agreements"}
     )
 
-    for i in df['partitions'].unique().to_list():
+    for i in df["partitions"].unique().to_list():
         _plot = (
             df_unpivot.filter(pl.col("partitions") == i)
             .sort("Method", "\# Samples")
@@ -263,10 +271,10 @@ def show_msep_agreement(df_base):
         )
         _plot = _plot.opts(
             opts.Curve(
-                color=hv.Cycle(['#1f77b4', '#d62728', '#2ca02c']),  # Blue, Red, Green
-                linestyle=hv.Cycle(['solid', 'dashed', 'dotted']),
+                color=hv.Cycle(["#1f77b4", "#d62728", "#2ca02c"]),  # Blue, Red, Green
+                linestyle=hv.Cycle(["solid", "dashed", "dotted"]),
                 alpha=1,
-                backend='matplotlib'
+                backend="matplotlib",
             ),
         )
 
@@ -291,13 +299,17 @@ def show_msep_agreement(df_base):
 
     identifiers = ["partitions", "num_samples"]
 
-    df_indep = df_indep.group_by(identifiers).agg(cs.contains('pvalue').mean(), pl.len())
+    df_indep = df_indep.group_by(identifiers).agg(
+        cs.contains("pvalue").mean(), pl.len()
+    )
 
-    df_indep = df_indep.rename({
-        'pooled_pvalue': 'Pooled',
-        'fisher_pvalue': 'Fisher',
-        'fedci_pvalue': 'FedCI',
-    })
+    df_indep = df_indep.rename(
+        {
+            "pooled_pvalue": "Pooled",
+            "fisher_pvalue": "Fisher",
+            "fedci_pvalue": "FedCI",
+        }
+    )
 
     df_unpivot = df_indep.unpivot(
         on=["Pooled", "Fisher", "FedCI"],
@@ -310,7 +322,7 @@ def show_msep_agreement(df_base):
         {"num_samples": "\# Samples", "accuracy": "Decision Agreements"}
     )
 
-    for i in df['partitions'].unique().to_list():
+    for i in df["partitions"].unique().to_list():
         _plot = (
             df_unpivot.filter(pl.col("partitions") == i)
             .sort("Method", "\# Samples")
@@ -354,10 +366,10 @@ def show_msep_agreement(df_base):
         )
         _plot = _plot.opts(
             opts.Curve(
-                color=hv.Cycle(['#1f77b4', '#d62728', '#2ca02c']),  # Blue, Red, Green
-                linestyle=hv.Cycle(['solid', 'dashed', 'dotted']),
+                color=hv.Cycle(["#1f77b4", "#d62728", "#2ca02c"]),  # Blue, Red, Green
+                linestyle=hv.Cycle(["solid", "dashed", "dotted"]),
                 alpha=1,
-                backend='matplotlib'
+                backend="matplotlib",
             ),
         )
 
@@ -373,20 +385,32 @@ def show_msep_agreement(df_base):
             dpi=300,
         )
 
-    #print('Weighted!')
+    # print('Weighted!')
 
-    df_weighted = df_dep.join(df_indep, on=identifiers, suffix='_indep')
+    df_weighted = df_dep.join(df_indep, on=identifiers, suffix="_indep")
     assert len(df_weighted) == len(df_dep) and len(df_dep) == len(df_indep)
 
-    df_weighted=df_weighted.with_columns(
-        total_len=pl.col('len')+pl.col('len_indep')
+    df_weighted = df_weighted.with_columns(
+        total_len=pl.col("len") + pl.col("len_indep")
     )
-    df_weighted=df_weighted.with_columns(
-        Pooled=(pl.col('Pooled')*pl.col('len')+pl.col('Pooled_indep')*pl.col('len_indep'))/pl.col('total_len'),
-        Fisher=(pl.col('Fisher')*pl.col('len')+pl.col('Fisher_indep')*pl.col('len_indep'))/pl.col('total_len'),
-        FedCI=(pl.col('FedCI')*pl.col('len')+pl.col('FedCI_indep')*pl.col('len_indep'))/pl.col('total_len'),
+    df_weighted = df_weighted.with_columns(
+        Pooled=(
+            pl.col("Pooled") * pl.col("len")
+            + pl.col("Pooled_indep") * pl.col("len_indep")
+        )
+        / pl.col("total_len"),
+        Fisher=(
+            pl.col("Fisher") * pl.col("len")
+            + pl.col("Fisher_indep") * pl.col("len_indep")
+        )
+        / pl.col("total_len"),
+        FedCI=(
+            pl.col("FedCI") * pl.col("len")
+            + pl.col("FedCI_indep") * pl.col("len_indep")
+        )
+        / pl.col("total_len"),
     )
-    df_weighted = df_weighted.drop(cs.ends_with('_indep')).drop('total_len')
+    df_weighted = df_weighted.drop(cs.ends_with("_indep")).drop("total_len")
 
     df_unpivot = df_weighted.unpivot(
         on=["Pooled", "Fisher", "FedCI"],
@@ -399,7 +423,7 @@ def show_msep_agreement(df_base):
         {"num_samples": "\# Samples", "accuracy": "Decision Agreements"}
     )
 
-    for i in df['partitions'].unique().to_list():
+    for i in df["partitions"].unique().to_list():
         _plot = (
             df_unpivot.filter(pl.col("partitions") == i)
             .sort("Method", "\# Samples")
@@ -443,10 +467,10 @@ def show_msep_agreement(df_base):
         )
         _plot = _plot.opts(
             opts.Curve(
-                color=hv.Cycle(['#1f77b4', '#d62728', '#2ca02c']),  # Blue, Red, Green
-                linestyle=hv.Cycle(['solid', 'dashed', 'dotted']),
+                color=hv.Cycle(["#1f77b4", "#d62728", "#2ca02c"]),  # Blue, Red, Green
+                linestyle=hv.Cycle(["solid", "dashed", "dotted"]),
                 alpha=1,
-                backend='matplotlib'
+                backend="matplotlib",
             ),
         )
 
@@ -464,12 +488,18 @@ def show_msep_agreement(df_base):
 
     df = df_base.with_columns(cs.contains("pvalue") >= alpha)
     df = df.with_columns(cs.contains("pvalue") == pl.col("MSep"))
-    for num_p in df['partitions'].unique().to_list():
-        for num_s in df['num_samples'].unique().to_list():
-            _df = df.filter((pl.col('num_samples')==num_s)&(pl.col('partitions')==num_p))
-            _df = _df.group_by('MSep', cs.contains('pvalue')).len().sort('MSep', cs.contains('pvalue'))
+    for num_p in df["partitions"].unique().to_list():
+        for num_s in df["num_samples"].unique().to_list():
+            _df = df.filter(
+                (pl.col("num_samples") == num_s) & (pl.col("partitions") == num_p)
+            )
+            _df = (
+                _df.group_by("MSep", cs.contains("pvalue"))
+                .len()
+                .sort("MSep", cs.contains("pvalue"))
+            )
             print(f"Agreement Table for {num_s} samples over {num_p} partitions")
-            print(_df)#.filter(pl.col('fisher_pvalue')!=pl.col('fedci_pvalue')))
+            print(_df)  # .filter(pl.col('fisher_pvalue')!=pl.col('fedci_pvalue')))
 
 
 def show_difference_to_msep(df_base):
@@ -617,6 +647,257 @@ def show_correctness_on_bad_fisher_predictions(df_base):
     show_incorrect_in_perc_based_on_indep_by_partition(df)
 
 
+def show_fisher_v_fedci_disagreement(df_base):
+    print("== Show Number of Disagreements between Fisher and FedCI")
+    df = df_base
+    df = df_base.with_columns(cs.contains("pvalue") >= alpha)
+    df = df.with_columns(cs.contains("pvalue") == pl.col("MSep"))
+    df = df.filter(pl.col("fisher_pvalue") != pl.col("fedci_pvalue")).drop_nulls()
+
+    print(
+        df.group_by("partitions", "num_samples", "fisher_pvalue", "fedci_pvalue")
+        .len()
+        .sort("partitions", "num_samples", "fisher_pvalue", "fedci_pvalue")
+    )
+
+
+def show_fedci_pooled_diff(df_base, log=True):
+    print("== Largest fedci diff to pooled")
+    df = df_base
+
+    if log:
+        df = df.with_columns(
+            pl.col("fedci_pvalue", "pooled_pvalue")
+            .name.suffix("_log")
+            .clip(pl.lit(1e-15), None)
+            .log()
+        )
+    df = df.with_columns(
+        diff=pl.col("fedci_pvalue") - pl.col("pooled_pvalue"),
+        diff_log=pl.col("fedci_pvalue_log") - pl.col("pooled_pvalue_log"),
+    )
+    df = df.with_columns(
+        X_type=pl.when(pl.col("X") == "A")
+        .then(pl.col("var_types").struct.field("A"))
+        .when(pl.col("X") == "B")
+        .then(pl.col("var_types").struct.field("B"))
+        .when(pl.col("X") == "C")
+        .then(pl.col("var_types").struct.field("C"))
+        .when(pl.col("X") == "D")
+        .then(pl.col("var_types").struct.field("D"))
+        .otherwise(pl.col("var_types").struct.field("E")),
+        Y_type=pl.when(pl.col("Y") == "A")
+        .then(pl.col("var_types").struct.field("A"))
+        .when(pl.col("Y") == "B")
+        .then(pl.col("var_types").struct.field("B"))
+        .when(pl.col("Y") == "C")
+        .then(pl.col("var_types").struct.field("C"))
+        .when(pl.col("Y") == "D")
+        .then(pl.col("var_types").struct.field("D"))
+        .otherwise(pl.col("var_types").struct.field("E")),
+    )
+    pl.Config.set_tbl_cols(13)
+    print("-- With Norms")
+    print(
+        df.select(
+            "X",
+            "Y",
+            "S",
+            "X_type",
+            "Y_type",
+            "norm_X_res",
+            "norm_X_unres",
+            "norm_Y_res",
+            "norm_Y_unres",
+            "pooled_pvalue",
+            "fedci_pvalue",
+            "diff_log",
+        ).sort("diff_log")
+    )
+    print("-- Which test")
+    print(
+        df.select(
+            "X",
+            "Y",
+            "S",
+            "pag_id",
+            "seed",
+            "partitions",
+            "num_samples",
+            "pooled_pvalue",
+            "fedci_pvalue",
+            "pooled_pvalue_log",
+            "fedci_pvalue_log",
+            "diff",
+            "diff_log",
+        ).sort("diff_log")
+    )
+
+
+def show_deviation_from_pooled(df_base):
+    print("== Deviation from pooled test")
+    df = df_base
+
+    df = df.drop_nulls()
+
+    df = df.with_columns(cs.contains("pvalue").log())
+
+    df = df.with_columns(
+        fisher_pvalue_diff=pl.col("fisher_pvalue") - pl.col("pooled_pvalue"),
+        fedci_pvalue_diff=pl.col("fedci_pvalue") - pl.col("pooled_pvalue"),
+    )
+
+    print(
+        df.select(
+            pl.col("fisher_pvalue_diff", "fedci_pvalue_diff")
+            .mean()
+            .name.suffix("_mean"),
+            pl.col("fisher_pvalue_diff", "fedci_pvalue_diff").std().name.suffix("_std"),
+        )
+    )
+
+    def adjust_axis_spacing(plot, element):
+        ax = plot.handles["axis"]
+        # Distance between axis line and tick labels
+        ax.tick_params(axis="x", pad=8)
+        ax.tick_params(axis="y", pad=8)
+        # Distance between tick labels and axis labels
+        ax.xaxis.labelpad = 10
+        ax.yaxis.labelpad = 10
+
+    df = df.rename({"fisher_pvalue_diff": "Fisher", "fedci_pvalue_diff": "FedCI"})
+
+    df = df.unpivot(
+        on=["FedCI", "Fisher"],
+        index=["num_samples", "partitions"],
+        value_name="p-value Difference",
+        variable_name="Method",
+    )
+
+    # df = df.with_columns(
+    #     pl.col("Method").replace_strict({"Federated": "F", "Meta-Analysis": "MA"})
+    # )
+
+    def hierarchical_labels(plot, element):
+        ax = plot.handles["axis"]
+        fig = plot.handles["fig"]
+
+        # Get current tick labels and positions
+        tick_positions = ax.get_xticks()
+        labels = [label.get_text() for label in ax.get_xticklabels()]
+
+        # Parse labels to extract method and partition
+        parsed = []
+        for label in labels:
+            if "," in label:
+                method, partition = label.split(",")
+                parsed.append((method.strip(), partition.strip()))
+            else:
+                parsed.append((label, ""))
+
+        # Set partition numbers as main labels
+        ax.set_xticklabels([p[1] for p in parsed])
+
+        # Create method group labels
+        current_method = None
+        method_spans = []
+        start_idx = 0
+
+        for idx, (method, _) in enumerate(parsed):
+            if method != current_method:
+                if current_method is not None:
+                    method_spans.append((current_method, start_idx, idx - 1))
+                current_method = method
+                start_idx = idx
+
+        # Add the last method group
+        if current_method is not None:
+            method_spans.append((current_method, start_idx, len(parsed) - 1))
+
+        # Add method labels below using actual tick positions
+        for method, start, end in method_spans:
+            center = (tick_positions[start] + tick_positions[end]) / 2
+            ax.text(
+                center,
+                -0.15,
+                method,
+                transform=ax.get_xaxis_transform(),
+                ha="center",
+                va="top",
+                fontsize=10,
+                fontweight="bold",
+            )
+
+        # Move the xlabel further down
+        ax.xaxis.set_label_coords(0.5, -0.25)
+
+        # Adjust bottom margin to fit all labels
+        fig.subplots_adjust(bottom=0.25)
+
+    df = df.sort("Method", "num_samples", "partitions")
+
+    # _df = _df.filter(pl.col("num_splits") > 2)
+
+    for nsamples in df["num_samples"].unique().to_list():
+        _df = df.filter(pl.col("num_samples") == nsamples)
+        # print(_df)
+        plot = _df.hvplot.box(
+            # y='p-value Difference',# 'Meta-Analysis'],
+            y="p-value Difference",
+            by=["Method", "partitions"],
+            # y='Meta-Analysis',# 'Meta-Analysis'],
+            # by=['test_id', 'Method'],
+            # ylabel='Normalized Difference in p-value',
+            ylabel="Log-ratio of p-values",
+            xlabel="Method, \# Partitions",
+            # ylim=(-1,1),
+            showfliers=True,
+        )
+
+        # plot = plot.opts(
+        #     hooks=[adjust_axis_spacing],
+        # )
+        # Use this hook instead of adjust_axis_spacing
+        plot = plot.opts(
+            hooks=[hierarchical_labels],
+        )
+
+        _render = hv.render(plot, backend="matplotlib")
+        _render.savefig(
+            f"{image_folder}/logratio2pooled/by-partitions-s{nsamples}.svg",
+            format="svg",
+            bbox_inches="tight",
+            dpi=300,
+        )
+    for nparts in df["partitions"].unique().to_list():
+        _df = df.filter(pl.col("partitions") == nparts)
+
+        plot = _df.hvplot.box(
+            # y='p-value Difference',# 'Meta-Analysis'],
+            y="p-value Difference",
+            by=["Method", "num_samples"],
+            # y='Meta-Analysis',# 'Meta-Analysis'],
+            # by=['test_id', 'Method'],
+            # ylabel='Normalized Difference in p-value',
+            ylabel="Log-ratio of p-values",
+            xlabel="Method, # Samples",
+            # ylim=(-1,1),
+            showfliers=True,
+        )
+
+        plot = plot.opts(
+            hooks=[hierarchical_labels],
+        )
+
+        _render = hv.render(plot, backend="matplotlib")
+        _render.savefig(
+            f"{image_folder}/logratio2pooled/by-samples-p{nparts}.svg",
+            format="svg",
+            bbox_inches="tight",
+            dpi=300,
+        )
+
+
 show_null_counts_in_pvalues(df_base)
 show_correlation_to_msep(df_base)
 show_msep_agreement(df_base)
@@ -627,116 +908,6 @@ show_msep_versus_prediction_by_partition(df_base)
 show_incorrect_in_perc_based_on_indep_by_partition(df_base)
 # show_incorrect_in_perc_based_on_indep_by_partition_with_ord(df_base)
 # show_correctness_on_bad_fisher_predictions(df_base)
-
-
-"""
-
-Agreement Table for 1000 samples over 4 partitions
-shape: (8, 5)
-┌───────┬───────────────┬───────────────┬──────────────┬─────┐
-│ MSep  ┆ pooled_pvalue ┆ fisher_pvalue ┆ fedci_pvalue ┆ len │
-│ ---   ┆ ---           ┆ ---           ┆ ---          ┆ --- │
-│ bool  ┆ bool          ┆ bool          ┆ bool         ┆ u32 │
-╞═══════╪═══════════════╪═══════════════╪══════════════╪═════╡
-│ false ┆ false         ┆ false         ┆ true         ┆ 94  │ <-
-│ false ┆ false         ┆ true          ┆ false        ┆ 27  │
-│ false ┆ true          ┆ false         ┆ true         ┆ 219 │ <-
-│ false ┆ true          ┆ true          ┆ false        ┆ 42  │
-│ true  ┆ false         ┆ false         ┆ true         ┆ 13  │
-│ true  ┆ false         ┆ true          ┆ false        ┆ 17  │
-│ true  ┆ true          ┆ false         ┆ true         ┆ 15  │
-│ true  ┆ true          ┆ true          ┆ false        ┆ 6   │
-└───────┴───────────────┴───────────────┴──────────────┴─────┘
-Agreement Table for 1500 samples over 4 partitions
-shape: (8, 5)
-┌───────┬───────────────┬───────────────┬──────────────┬─────┐
-│ MSep  ┆ pooled_pvalue ┆ fisher_pvalue ┆ fedci_pvalue ┆ len │
-│ ---   ┆ ---           ┆ ---           ┆ ---          ┆ --- │
-│ bool  ┆ bool          ┆ bool          ┆ bool         ┆ u32 │
-╞═══════╪═══════════════╪═══════════════╪══════════════╪═════╡
-│ false ┆ false         ┆ false         ┆ true         ┆ 71  │ <-
-│ false ┆ false         ┆ true          ┆ false        ┆ 18  │
-│ false ┆ true          ┆ false         ┆ true         ┆ 240 │ <-
-│ false ┆ true          ┆ true          ┆ false        ┆ 28  │
-│ true  ┆ false         ┆ false         ┆ true         ┆ 23  │
-│ true  ┆ false         ┆ true          ┆ false        ┆ 16  │
-│ true  ┆ true          ┆ false         ┆ true         ┆ 10  │
-│ true  ┆ true          ┆ true          ┆ false        ┆ 9   │
-└───────┴───────────────┴───────────────┴──────────────┴─────┘
-Agreement Table for 2000 samples over 4 partitions
-shape: (8, 5)
-┌───────┬───────────────┬───────────────┬──────────────┬─────┐
-│ MSep  ┆ pooled_pvalue ┆ fisher_pvalue ┆ fedci_pvalue ┆ len │
-│ ---   ┆ ---           ┆ ---           ┆ ---          ┆ --- │
-│ bool  ┆ bool          ┆ bool          ┆ bool         ┆ u32 │
-╞═══════╪═══════════════╪═══════════════╪══════════════╪═════╡
-│ false ┆ false         ┆ false         ┆ true         ┆ 66  │ <-
-│ false ┆ false         ┆ true          ┆ false        ┆ 12  │
-│ false ┆ true          ┆ false         ┆ true         ┆ 191 │ <-
-│ false ┆ true          ┆ true          ┆ false        ┆ 50  │
-│ true  ┆ false         ┆ false         ┆ true         ┆ 27  │
-│ true  ┆ false         ┆ true          ┆ false        ┆ 16  │
-│ true  ┆ true          ┆ false         ┆ true         ┆ 11  │
-│ true  ┆ true          ┆ true          ┆ false        ┆ 11  │
-└───────┴───────────────┴───────────────┴──────────────┴─────┘
-Agreement Table for 2500 samples over 4 partitions
-shape: (8, 5)
-┌───────┬───────────────┬───────────────┬──────────────┬─────┐
-│ MSep  ┆ pooled_pvalue ┆ fisher_pvalue ┆ fedci_pvalue ┆ len │
-│ ---   ┆ ---           ┆ ---           ┆ ---          ┆ --- │
-│ bool  ┆ bool          ┆ bool          ┆ bool         ┆ u32 │
-╞═══════╪═══════════════╪═══════════════╪══════════════╪═════╡
-│ false ┆ false         ┆ false         ┆ true         ┆ 50  │ <-
-│ false ┆ false         ┆ true          ┆ false        ┆ 11  │
-│ false ┆ true          ┆ false         ┆ true         ┆ 178 │ <-
-│ false ┆ true          ┆ true          ┆ false        ┆ 39  │
-│ true  ┆ false         ┆ false         ┆ true         ┆ 16  │
-│ true  ┆ false         ┆ true          ┆ false        ┆ 13  │
-│ true  ┆ true          ┆ false         ┆ true         ┆ 10  │
-│ true  ┆ true          ┆ true          ┆ false        ┆ 7   │
-└───────┴───────────────┴───────────────┴──────────────┴─────┘
-Agreement Table for 3000 samples over 4 partitions
-shape: (8, 5)
-┌───────┬───────────────┬───────────────┬──────────────┬─────┐
-│ MSep  ┆ pooled_pvalue ┆ fisher_pvalue ┆ fedci_pvalue ┆ len │
-│ ---   ┆ ---           ┆ ---           ┆ ---          ┆ --- │
-│ bool  ┆ bool          ┆ bool          ┆ bool         ┆ u32 │
-╞═══════╪═══════════════╪═══════════════╪══════════════╪═════╡
-│ false ┆ false         ┆ false         ┆ true         ┆ 46  │ <-
-│ false ┆ false         ┆ true          ┆ false        ┆ 9   │
-│ false ┆ true          ┆ false         ┆ true         ┆ 190 │ <-
-│ false ┆ true          ┆ true          ┆ false        ┆ 36  │
-│ true  ┆ false         ┆ false         ┆ true         ┆ 15  │ <-
-│ true  ┆ false         ┆ true          ┆ false        ┆ 32  │
-│ true  ┆ true          ┆ false         ┆ true         ┆ 7   │ <-
-│ true  ┆ true          ┆ true          ┆ false        ┆ 10  │
-└───────┴───────────────┴───────────────┴──────────────┴─────┘
-
-
-=== FULL TABLE
-Agreement Table for 3000 samples over 4 partitions
-shape: (16, 5)
-┌───────┬───────────────┬───────────────┬──────────────┬──────┐
-│ MSep  ┆ pooled_pvalue ┆ fisher_pvalue ┆ fedci_pvalue ┆ len  │
-│ ---   ┆ ---           ┆ ---           ┆ ---          ┆ ---  │
-│ bool  ┆ bool          ┆ bool          ┆ bool         ┆ u32  │
-╞═══════╪═══════════════╪═══════════════╪══════════════╪══════╡
-│ false ┆ false         ┆ false         ┆ false        ┆ 193  │
-│ false ┆ false         ┆ false         ┆ true         ┆ 46   │
-│ false ┆ false         ┆ true          ┆ false        ┆ 9    │
-│ false ┆ false         ┆ true          ┆ true         ┆ 310  │
-│ false ┆ true          ┆ false         ┆ false        ┆ 670  │
-│ false ┆ true          ┆ false         ┆ true         ┆ 190  │
-│ false ┆ true          ┆ true          ┆ false        ┆ 36   │
-│ false ┆ true          ┆ true          ┆ true         ┆ 5746 │
-│ true  ┆ false         ┆ false         ┆ false        ┆ 10   │
-│ true  ┆ false         ┆ false         ┆ true         ┆ 15   │
-│ true  ┆ false         ┆ true          ┆ false        ┆ 32   │
-│ true  ┆ false         ┆ true          ┆ true         ┆ 536  │
-│ true  ┆ true          ┆ false         ┆ false        ┆ 7    │
-│ true  ┆ true          ┆ false         ┆ true         ┆ 7    │
-│ true  ┆ true          ┆ true          ┆ false        ┆ 10   │
-│ true  ┆ true          ┆ true          ┆ true         ┆ 183  │
-└───────┴───────────────┴───────────────┴──────────────┴──────┘
-
-"""
+# show_fisher_v_fedci_disagreement(df_base)
+show_deviation_from_pooled(df_base)
+show_fedci_pooled_diff(df_base)

@@ -230,6 +230,7 @@ run_ci_test <- function(data, max_cond_set_cardinality, filedir, filename) {
   suffStat <- getMixedCISuffStat(dat = data,
                                  vars_names = labels,
                                  covs_names = c())
+
   suffStat$verbose <- TRUE
   citestResults <- getAllCITestResults(data,
                                       indepTest,
@@ -382,4 +383,42 @@ load_pags <- function() {
     #c(truePAGs, subsetsList)
     #tuple <- list(A, B)
     return(list(truePAGs = truePAGs, subsetsList = subsetsList))
+}
+
+ci_mxm_test <- function(data, x, y, z) {
+  # Load MXM explicitly (important for rpy2)
+  if (!requireNamespace("MXM", quietly = TRUE)) {
+    stop("Package 'MXM' is required but not installed.")
+  }
+
+  # Basic checks
+  if (!is.data.frame(data)) {
+    stop("data must be a data.frame")
+  }
+
+  vars <- colnames(data)
+
+  if (!(x %in% vars)) stop(paste("x not found:", x))
+  if (!(y %in% vars)) stop(paste("y not found:", y))
+  if (length(z) > 0 && !all(z %in% vars)) {
+    stop("Some conditioning variables not found in data")
+  }
+
+  # Convert names → indices (MXM requirement)
+  xi <- which(vars == x)
+  yi <- which(vars == y)
+  zi <- which(vars %in% z)
+
+  # Run CI test (use ci.mm2 for stability)
+  out <- MXM::ci.mm(xi, yi, zi, data)
+
+  # Return a Python-friendly structure
+  list(
+    x = x,
+    y = y,
+    z = z,
+    statistic = as.numeric(out$statistic),
+    pvalue = as.numeric(out$pvalue),
+    method = out$method
+  )
 }

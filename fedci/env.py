@@ -1,11 +1,11 @@
 import os
-DEBUG = 0 if (v:=os.getenv("DEBUG")) is None else int(v)
-NO_WRITE = 0 if (v:=os.getenv("NO_WRITE")) is None else int(v)
-LOG_R = 0 if (v:=os.getenv("LOG_R")) is None else int(v)
 
-EXPAND_ORDINALS = 1 if (v:=os.getenv("EXPAND_ORDINALS")) is None else int(v)
-LR = 1 if (v:=os.getenv("LR")) is None else float(v)
-RIDGE = 0 if (v:=os.getenv("RIDGE")) is None else float(v)
-OVR = 0 if (v:=os.getenv("OVR")) is None else int(v)
-
-PRECISE = 1 if (v:=os.getenv("PRECISE")) is None else int(v)
+DEBUG = 0 if (v := os.getenv("DEBUG")) is None else int(v)
+RIDGE = 0.1 if (v := os.getenv("RIDGE")) is None else float(v)
+FIT_INTERCEPT = True if (v := os.getenv("FIT_INTERCEPT")) is None else bool(int(v))
+CLIENT_HETEROGENIETY = (
+    True if (v := os.getenv("CLIENT_HETEROGENIETY")) is None else bool(int(v))
+)
+ADDITIVE_MASKING = (
+    True if (v := os.getenv("ADDITIVE_MASKING")) is None else bool(int(v))
+)
