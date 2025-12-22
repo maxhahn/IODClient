@@ -192,14 +192,16 @@ class LikelihoodRatioTest:
 
     def get_test_parameters(self):
         test_parameters = {}
-        response, predictors, iteration, beta, _, _ = (
-            self.restricted_test.get_test_parameters()
-        )
-        test_parameters[(response, predictors, iteration)] = beta
-        response, predictors, iteration, beta, _, _ = (
-            self.unrestricted_test.get_test_parameters()
-        )
-        test_parameters[(response, predictors, iteration)] = beta
+        if not self.restricted_test.is_finished():
+            response, predictors, iteration, beta, _, _ = (
+                self.restricted_test.get_test_parameters()
+            )
+            test_parameters[(response, predictors, iteration)] = beta
+        if not self.unrestricted_test.is_finished():
+            response, predictors, iteration, beta, _, _ = (
+                self.unrestricted_test.get_test_parameters()
+            )
+            test_parameters[(response, predictors, iteration)] = beta
         return test_parameters
 
     def get_betas(self):
@@ -438,6 +440,9 @@ class TestEngine:
 
     def get_test_parameters(self):
         return self.test.get_test_parameters()
+
+    def get_required_variables(self):
+        return {self.test.v0} | {self.test.v1} | self.test.conditioning_set
 
     def update_parameters(
         self, update: List[Dict[Tuple[str, Tuple[str], int], BetaUpdateData]]

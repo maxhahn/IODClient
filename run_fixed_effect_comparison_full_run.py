@@ -271,11 +271,29 @@ def test_pooled_data(dfs, labels):
         else:
             l2_dfs.append(df.select(l2 + ["CLIENT"]))
 
+    intersection_df = intersection_df.select(
+        [
+            col.name
+            for col in intersection_df.select(pl.all().n_unique() > 1)
+            if col.item()
+        ]
+    )
+
+    l1_df = pl.concat(l1_dfs)
+    l1_df = l1_df.select(
+        [col.name for col in l1_df.select(pl.all().n_unique() > 1) if col.item()]
+    )
+
+    l2_df = pl.concat(l2_dfs)
+    l2_df = l2_df.select(
+        [col.name for col in l2_df.select(pl.all().n_unique() > 1) if col.item()]
+    )
+
     intersection_result_df = remove_client_from_pooled_result(
         *mxm_ci_test(intersection_df)
     )
-    l1_result_df = remove_client_from_pooled_result(*mxm_ci_test(pl.concat(l1_dfs)))
-    l2_result_df = remove_client_from_pooled_result(*mxm_ci_test(pl.concat(l2_dfs)))
+    l1_result_df = remove_client_from_pooled_result(*mxm_ci_test(l1_df))
+    l2_result_df = remove_client_from_pooled_result(*mxm_ci_test(l2_df))
 
     l1_result_df = l1_result_df.join(
         intersection_result_df, on=["ord", "X", "Y", "S"], how="anti"
@@ -351,22 +369,28 @@ data_dir = "experiments/fixed_effect_data/sim"
 
 # seed = random.randint(0, 100000)
 seed_start = 10000
+# seed_start = 10022
 num_runs = 30
+# error for batch [1] on seed 10011 (i think). No Outcome for this CI test
+# stopped batch [1] at 10/18 for runs starting from 10012
+# gleicher seed macht probleme bei batch [2]+[3]
 SEEDS = range(seed_start, seed_start + num_runs)
 SAMPLES = [500, 1000, 2500, 5000]
 CLIENTS = [4, 8, 12]
 
 # stop waehrend 22tem seed.
 
-pag_ids_to_test = [61]
-pag_ids_to_test_no_slides_pag = [pag_id for pag_id in three_tail_pags if pag_id != 61]
-pag_ids_to_test_no_slides_pag_batched = []
-bs = 3
-for i in range(0, len(pag_ids_to_test_no_slides_pag), bs):
-    pag_ids_to_test_no_slides_pag_batched.append(
-        pag_ids_to_test_no_slides_pag[i : i + bs]
-    )
-pag_ids_to_test = pag_ids_to_test_no_slides_pag_batched[0]
+# pag_ids_to_test = [61]
+# pag_ids_to_test_no_slides_pag = [pag_id for pag_id in three_tail_pags if pag_id != 61]
+# pag_ids_to_test_no_slides_pag_batched = []
+# bs = 3
+# for i in range(0, len(pag_ids_to_test_no_slides_pag), bs):
+#     pag_ids_to_test_no_slides_pag_batched.append(
+#         pag_ids_to_test_no_slides_pag[i : i + bs]
+#     )
+# pag_ids_to_test = pag_ids_to_test_no_slides_pag_batched[1]
+pag_ids_to_test = three_tail_pags
+
 # print(pag_ids_to_test)
 # asd
 POTENTIAL_VAR_LEVELS = [
@@ -378,10 +402,16 @@ POTENTIAL_VAR_LEVELS = [
 
 from tqdm import tqdm
 
-for seed in tqdm(SEEDS, position=0, leave=True):
-    for pag_id in tqdm(pag_ids_to_test, position=1, leave=False):
+for pag_id in tqdm(pag_ids_to_test, position=0, leave=True):
+    print(pag_id)
+    for seed in tqdm(SEEDS, position=1, leave=False):
         for num_clients in tqdm(CLIENTS, position=2, leave=False):
             for num_samples in tqdm(SAMPLES, position=3, leave=False):
+                file_key = f"{seed}-id{pag_id}-s{num_samples}-c{num_clients}.parquet"
+                target_file = f"{data_dir}/{file_key}"
+                if os.path.exists(target_file):
+                    continue
+
                 random.seed(seed)
                 base_pag = test_pag_mapping[pag_id]
                 label_split = test_label_split_mapping[pag_id]
@@ -423,11 +453,11 @@ for seed in tqdm(SEEDS, position=0, leave=True):
                     fedci_runtime=pl.lit(time_fedci)
                 )
 
-                df_result = df_pooled.join(
-                    df_fisher, on=["ord", "X", "Y", "S"], how="left"
+                df_result = df_fedci.join(
+                    df_pooled, on=["ord", "X", "Y", "S"], how="left"
                 )
                 df_result = df_result.join(
-                    df_fedci, on=["ord", "X", "Y", "S"], how="left"
+                    df_fisher, on=["ord", "X", "Y", "S"], how="left"
                 )
 
                 df_result = df_result.join(
@@ -447,9 +477,7 @@ for seed in tqdm(SEEDS, position=0, leave=True):
 
                 if not os.path.exists(f"{data_dir}"):
                     os.makedirs(f"{data_dir}")
-                df_result.write_parquet(
-                    f"{data_dir}/{seed}-id{pag_id}-s{num_samples}-c{num_clients}.parquet"
-                )
+                df_result.write_parquet(target_file)
 
 
 """

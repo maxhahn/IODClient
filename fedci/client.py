@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import polars as pl
@@ -816,16 +816,17 @@ class Client:
 
     def compute(
         self,
+        required_variables: Set[str],
         betas: Dict[Tuple[str, Tuple[str], int], np.ndarray],
     ):
         betas = self._network_fetch_function(betas)
 
-        test_vars = [
-            {resp_var} | set(cond_vars) for resp_var, cond_vars, _ in betas.keys()
-        ]
-        test_vars = set.union(*test_vars)
+        # test_vars = [
+        #     {resp_var} | set(cond_vars) for resp_var, cond_vars, _ in betas.keys()
+        # ]
+        # test_vars = set.union(*test_vars)
 
-        if any([v not in self.schema for v in test_vars]):
+        if any([v not in self.schema for v in required_variables]):
             result = {}
             for test_key, beta in betas.items():
                 result[test_key] = self.apply_masks(

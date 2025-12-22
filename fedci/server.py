@@ -120,15 +120,14 @@ class Server:
 
         while not self.test_engine.is_finished():
             betas = self.test_engine.get_test_parameters()
+            required_vars = self.test_engine.get_required_variables()
             clients = self.clients.values()
             if ADDITIVE_MASKING:
                 for client in clients:
                     client.exchange_masks(betas)
-                # for client in clients:
-                #    client.combine_masks(betas)
             updates = []
             for client in clients:
-                update = client.compute(betas)
+                update = client.compute(required_vars, betas)
                 update = self._network_fetch_function(update)
                 update = {
                     k: BetaUpdateData(**v) if type(v) is dict else v
