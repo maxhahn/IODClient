@@ -14,6 +14,7 @@ plt.rcParams.update({"svg.fonttype": "none"})
 
 pl.Config.set_tbl_rows(40)
 
+# df.group_by('pag_id', 'seed', 'num_samples', 'partitions').len().filter(pl.col('len')!=42)
 
 image_folder = "images/fixed_effect_images"
 
@@ -23,6 +24,26 @@ folder = "experiments/fixed_effect_data/sim"
 
 alpha = 0.05
 df_base = pl.read_parquet(f"{folder}/*.parquet")
+
+print("== Perc of nulls in pooled")
+print(df_base.select(pl.col("pooled_pvalue").null_count() / len(df_base)))
+
+df_base = df_base.filter(pl.col("pooled_pvalue").is_not_null())
+
+df_base = df_base.with_columns(
+    max_norm=pl.max_horizontal(
+        [
+            pl.col("norm_X_unres").list.max(),
+            pl.col("norm_X_res").list.max(),
+            pl.col("norm_Y_unres").list.max(),
+            pl.col("norm_Y_res").list.max(),
+        ]
+    )
+)
+
+df_base = df_base.filter(pl.col("max_norm") < 1000)
+
+# df_base = df_base.filter(pl.col("seed") != 10011)
 
 graph = None  # "SLIDES"
 num_samples = None

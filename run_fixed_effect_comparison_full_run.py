@@ -284,14 +284,21 @@ def test_pooled_data(dfs, labels):
         [col.name for col in l1_df.select(pl.all().n_unique() > 1) if col.item()]
     )
 
+    # if len(l1_df.columns) != 5:
+    #     print("L1 lacks col")
+
     l2_df = pl.concat(l2_dfs)
     l2_df = l2_df.select(
         [col.name for col in l2_df.select(pl.all().n_unique() > 1) if col.item()]
     )
+    # if len(l2_df.columns) != 5:
+    #     print("L2 lacks col")
 
     intersection_result_df = remove_client_from_pooled_result(
         *mxm_ci_test(intersection_df)
     )
+    # if len(intersection_df.columns) != 4:
+    #     print("Linter lacks col")
     l1_result_df = remove_client_from_pooled_result(*mxm_ci_test(l1_df))
     l2_result_df = remove_client_from_pooled_result(*mxm_ci_test(l2_df))
 
@@ -319,35 +326,41 @@ def test_dataset(df, labels):
         for i, d in enumerate(dfs)
     ]
 
-    try:
-        # STEP 2: Test with Meta Analysis
-        meta_dfs, meta_df_labels = zip(*[mxm_ci_test(d) for d in dfs])
-        meta_dfs = [
-            replace_idx_with_varnames(pl.from_pandas(_df), _labels)
-            for _df, _labels in zip(meta_dfs, meta_df_labels)
-        ]
-
-        fisher_df = pl.concat(meta_dfs)
-        fisher_df = fisher_df.group_by(["ord", "X", "Y", "S"]).agg(pl.col("pvalue"))
-
-        fisher_df = fisher_df.with_columns(
-            DOFs=2 * pl.col("pvalue").list.len(),
-            T=-2 * (pl.col("pvalue").list.eval(pl.element().log()).list.sum()),
+    # try:
+    # STEP 2: Test with Meta Analysis
+    _dfs = [
+        _df.select(
+            [col.name for col in _df.select(pl.all().n_unique() > 1) if col.item()],
         )
+        for _df in dfs
+    ]
+    meta_dfs, meta_df_labels = zip(*[mxm_ci_test(d) for d in _dfs])
+    meta_dfs = [
+        replace_idx_with_varnames(pl.from_pandas(_df), _labels)
+        for _df, _labels in zip(meta_dfs, meta_df_labels)
+    ]
 
-        fisher_df = (
-            fisher_df.with_columns(
-                pvalue_fisher=pl.struct(["DOFs", "T"]).map_elements(
-                    lambda row: scipy.stats.chi2.sf(row["T"], row["DOFs"]),
-                    return_dtype=pl.Float64,
-                )
+    fisher_df = pl.concat(meta_dfs)
+    fisher_df = fisher_df.group_by(["ord", "X", "Y", "S"]).agg(pl.col("pvalue"))
+
+    fisher_df = fisher_df.with_columns(
+        DOFs=2 * pl.col("pvalue").list.len(),
+        T=-2 * (pl.col("pvalue").list.eval(pl.element().log()).list.sum()),
+    )
+
+    fisher_df = (
+        fisher_df.with_columns(
+            pvalue_fisher=pl.struct(["DOFs", "T"]).map_elements(
+                lambda row: scipy.stats.chi2.sf(row["T"], row["DOFs"]),
+                return_dtype=pl.Float64,
             )
-            .drop("DOFs", "T", "pvalue")
-            .rename({"pvalue_fisher": "pvalue"})
-            .sort("ord", "X", "Y", "S")
         )
-    except rpy2.rinterface_lib.embedded.RRuntimeError:
-        fisher_df = pooled_result_df.with_columns(pvalue=pl.lit(None))
+        .drop("DOFs", "T", "pvalue")
+        .rename({"pvalue_fisher": "pvalue"})
+        .sort("ord", "X", "Y", "S")
+    )
+    # except rpy2.rinterface_lib.embedded.RRuntimeError:
+    #     fisher_df = pooled_result_df.with_columns(pvalue=pl.lit(None))
     t2 = time.time()
     # print(fisher_df)
     # STEP 3: Test with FedCI
@@ -369,12 +382,9 @@ data_dir = "experiments/fixed_effect_data/sim"
 
 # seed = random.randint(0, 100000)
 seed_start = 10000
-# seed_start = 10022
 num_runs = 30
-# error for batch [1] on seed 10011 (i think). No Outcome for this CI test
-# stopped batch [1] at 10/18 for runs starting from 10012
-# gleicher seed macht probleme bei batch [2]+[3]
 SEEDS = range(seed_start, seed_start + num_runs)
+# SEEDS = [10011]
 SAMPLES = [500, 1000, 2500, 5000]
 CLIENTS = [4, 8, 12]
 
@@ -403,40 +413,52 @@ POTENTIAL_VAR_LEVELS = [
 from tqdm import tqdm
 
 for pag_id in tqdm(pag_ids_to_test, position=0, leave=True):
-    print(pag_id)
     for seed in tqdm(SEEDS, position=1, leave=False):
+        random.seed(seed)
+
+        base_pag = test_pag_mapping[pag_id]
+        label_split = test_label_split_mapping[pag_id]
+
+        df_msep = df_msep_mapping[pag_id]
+
+        fixed_effect_pag = np.zeros((base_pag.shape[0] + 1, base_pag.shape[1] + 1))
+        fixed_effect_pag[:-1, :-1] = base_pag
+        fixed_effect_pag[:-1, -1] = np.full(base_pag.shape[0], fill_value=3)
+        fixed_effect_pag[-1, :-1] = np.full(base_pag.shape[0], fill_value=2)
+
+        all_vars = sorted(list(set(label_split[0] + label_split[1])))
+
+        var_types = {}
+        var_levels = {}
+        for var in all_vars:
+            choice = random.choice(POTENTIAL_VAR_LEVELS)
+            var_types[var] = choice[0]
+            var_levels[var] = choice[1]
+        var_types["CLIENT"] = "nominal"
+        var_levels["CLIENT"] = -1
+        while (
+            sum([True if vt == "continuous" else False for vt in var_types.values()])
+            < 2
+        ):
+            var = random.choice(all_vars)
+            if var == "CLIENT":
+                continue
+            choice = random.choice(POTENTIAL_VAR_LEVELS)
+            var_types[var] = choice[0]
+            var_levels[var] = choice[1]
+
         for num_clients in tqdm(CLIENTS, position=2, leave=False):
+            var_levels["CLIENT"] = num_clients
+            var_levels_list = list(var_levels.values())
+
             for num_samples in tqdm(SAMPLES, position=3, leave=False):
                 file_key = f"{seed}-id{pag_id}-s{num_samples}-c{num_clients}.parquet"
                 target_file = f"{data_dir}/{file_key}"
                 if os.path.exists(target_file):
                     continue
 
-                random.seed(seed)
-                base_pag = test_pag_mapping[pag_id]
-                label_split = test_label_split_mapping[pag_id]
-
-                df_msep = df_msep_mapping[pag_id]
-
-                fixed_effect_pag = np.zeros(
-                    (base_pag.shape[0] + 1, base_pag.shape[1] + 1)
-                )
-                fixed_effect_pag[:-1, :-1] = base_pag
-                fixed_effect_pag[:-1, -1] = np.full(base_pag.shape[0], fill_value=3)
-                fixed_effect_pag[-1, :-1] = np.full(base_pag.shape[0], fill_value=2)
-                all_vars = sorted(list(set(label_split[0] + label_split[1])))
-                var_types = {}
-                var_levels = []
-                for var in all_vars:
-                    choice = random.choice(POTENTIAL_VAR_LEVELS)
-                    var_types[var] = choice[0]
-                    var_levels.append(choice[1])
-
-                var_types["CLIENT"] = "nominal"
-                var_levels.append(num_clients)
-
                 df = get_data(
-                    fixed_effect_pag, num_samples, var_types, var_levels, seed
+                    fixed_effect_pag, num_samples, var_types, var_levels_list, seed
                 )
 
                 df_pooled, df_fisher, df_fedci, time_pooled, time_fisher, time_fedci = (
