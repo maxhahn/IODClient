@@ -377,7 +377,7 @@ def test_dataset(df, labels):
     return pooled_result_df, fisher_df, fedci_df, t1 - t0, t2 - t1, t3 - t2
 
 
-data_dir = "experiments/fixed_effect_data/sim"
+data_dir = "experiments/fixed_effect_data/sim2"
 
 
 # seed = random.randint(0, 100000)
@@ -400,6 +400,7 @@ CLIENTS = [4, 8, 12]
 #     )
 # pag_ids_to_test = pag_ids_to_test_no_slides_pag_batched[1]
 pag_ids_to_test = three_tail_pags
+pag_ids_to_test = [18, 61, 1]
 
 # print(pag_ids_to_test)
 # asd
@@ -486,7 +487,7 @@ for pag_id in tqdm(pag_ids_to_test, position=0, leave=True):
                     df_msep, on=["ord", "X", "Y", "S"], how="left"
                 )
 
-                del var_types["CLIENT"]
+                # del var_types["CLIENT"]
                 df_result = df_result.with_columns(
                     seed=pl.lit(seed),
                     pag_id=pl.lit(pag_id),

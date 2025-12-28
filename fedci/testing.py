@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Set, Tuple
 import numpy as np
 import scipy
 
-from .env import DEBUG, FIT_INTERCEPT, RIDGE
+from .env import DEBUG, FIT_INTERCEPT, LINE_SEARCH, RIDGE
 from .utils import BetaUpdateData, VariableType
 
 
@@ -24,13 +24,19 @@ class RegressionTest:
         self.num_classes, self.num_parameters = params
         self.dof = self.num_classes * self.num_parameters
         self.beta = np.zeros((self.dof, 1))
+        self.alpha = 1.0
 
         self.convergence_threshold = convergence_threshold
         self.max_iterations = max_iterations
+        self.early_stop = False
 
-        self.previous_llf = None
-        self.llf: float = 0.0
+        self.previous_xwx = None
+        self.previous_xwz = None
+        self.previous_llf: float = -float("inf")
+        self.llf: float = -float("inf")
         self.iterations: int = 0
+        self.reposition_count = 0
+        self.lm_lambda = 1
 
     def __repr__(self):
         (
@@ -52,10 +58,16 @@ class RegressionTest:
             return 1
         return abs(self.llf - self.previous_llf)
 
+    def get_relative_change_in_llf(self):
+        if self.previous_llf is None:
+            return 1
+        return abs(self.llf - self.previous_llf) / (1 + abs(self.previous_llf))
+
     def is_finished(self):
         return (
             self.get_change_in_llf() < self.convergence_threshold
             or self.iterations >= self.max_iterations
+            or self.early_stop
         )
 
     def get_test_parameters(self):
@@ -68,28 +80,18 @@ class RegressionTest:
             self.num_parameters,
         )
 
-    def update_parameters(self, update: List[BetaUpdateData]):
-        if self.is_finished():
-            return
-
-        llf = sum([_update.llf for _update in update])
-        xwx = sum([_update.xwx for _update in update])
-        xwz = sum([_update.xwz for _update in update])
-        n = int(sum([_update.n for _update in update]))
-        if self.response_type == VariableType.CONTINUOS and n > 0:
-            rss = sum([_update.rss for _update in update])
-            sigma2 = np.clip(rss / n, 1e-10, None)
-            llf = -0.5 * n * np.log(2 * np.pi * sigma2) - 0.5 * n
-            llf = llf.astype(np.float64).item()  # uses np.float128 for higher precision
-
+    def _get_new_beta(self, xwx, xwz):
+        k = xwx.shape[0]
         if RIDGE > 0:
-            k = xwx.shape[0]
-            # if FIT_INTERCEPT:
-            #     penalty_matrix = np.zeros((k, k))
-            #     penalty_matrix[:-1, :-1] = RIDGE * np.eye(k - 1)
-            # else:
-            penalty_matrix = RIDGE * np.eye(k)
+            if FIT_INTERCEPT:
+                penalty_matrix = np.zeros((k, k))
+                penalty_matrix[:-1, :-1] = RIDGE * np.eye(k - 1)
+            else:
+                penalty_matrix = RIDGE * np.eye(k)
             xwx += penalty_matrix
+
+        lm_penalty_matrix = self.lm_lambda * np.eye(k)
+        xwx += lm_penalty_matrix
 
         try:
             xwx_inv = np.linalg.inv(xwx)
@@ -107,11 +109,63 @@ class RegressionTest:
                 f"{'None' if self.previous_llf is None else self.previous_llf} -> {self.llf}"
             )
 
+        self.previous_xwx = xwx
+        self.previous_xwz = xwz
+        return self.beta + self.alpha * ((xwx_inv @ xwz) - self.beta)
+
+    def update_parameters(self, update: List[BetaUpdateData]):
+        if self.is_finished():
+            return
+
+        llf = sum([_update.llf for _update in update])
+        xwx = sum([_update.xwx for _update in update])
+        xwz = sum([_update.xwz for _update in update])
+        n = int(sum([_update.n for _update in update]))
+        # if self.response == "A":
+        #     if abs(self.llf - llf) > 10:
+        #         print(self.llf, llf, self.alpha, self.response, self.predictors)
+        if self.response_type == VariableType.CONTINUOS and n > 0:
+            rss = sum([_update.rss for _update in update])
+            sigma2 = np.clip(rss / n, 1e-10, None)
+            llf = -0.5 * n * np.log(2 * np.pi * sigma2) - 0.5 * n
+            llf = llf.astype(np.float64).item()  # uses np.float128 for higher precision
+
+        if LINE_SEARCH and self.llf > llf:
+            # if no small step improves llf, stop fitting
+            if self.alpha <= 1e-8:
+                if self.reposition_count > 10:
+                    self.early_stop = True
+                    return
+                self.alpha = 1.0
+                self.lm_lambda *= 10
+                self.beta = self._get_new_beta(
+                    self.previous_xwx,
+                    self.previous_xwz,
+                    # + np.random.normal(0, 1e-8, self.previous_xwz.shape),
+                )
+                self.reposition_count += 1
+                return
+            # got worse
+            # For this step, no llf is available. So check with previous llf and redo last update with new alpha
+            self.alpha *= 0.5
+            # self.iterations += 1
+            # self.max_iterations += 1
+
+            self.beta = self._get_new_beta(self.previous_xwx, self.previous_xwz)
+            return
+
         self.previous_llf = self.llf
         self.llf = llf
-
-        self.beta = xwx_inv @ xwz
-
+        self.alpha = 1.0
+        if self.lm_lambda > 1e-12:
+            self.lm_lambda /= 10
+        beta = self._get_new_beta(xwx, xwz)
+        # TODO: improve with variables
+        # if alpha <1e-8 und update wird trotzdem gemacht: break, test ende
+        if np.linalg.norm(self.beta - beta) < 1e-5:
+            self.early_stop = True
+            return
+        self.beta = beta
         self.iterations += 1
 
 

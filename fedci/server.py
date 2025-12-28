@@ -21,7 +21,7 @@ class Server:
         clients: List[Client],
         schema: Optional[InitialSchema] = None,
         max_regressors: Optional[int] = None,
-        convergence_threshold: Optional[float] = 1e-6,
+        convergence_threshold: Optional[float] = 1e-5,
         max_iterations: Optional[int] = 25,
         _network_fetch_function=lambda x: x,
     ):
@@ -147,7 +147,7 @@ class Server:
                 for _beta in beta.tolist():
                     print(_beta)
         result = self.test_engine.get_result()
-        if result.iterations == 1:
+        if result.iterations <= 1:
             return None
         return result
 

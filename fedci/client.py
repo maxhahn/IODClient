@@ -3,9 +3,11 @@ from typing import Dict, List, Optional, Set, Tuple
 import numpy as np
 import polars as pl
 import rpyc
+import statsmodels.api as sm
+import statsmodels.genmod.families.family as fam
 from scipy.special import softmax
 
-from .env import ADDITIVE_MASKING, CLIENT_HETEROGENIETY, FIT_INTERCEPT
+from .env import ADDITIVE_MASKING, CLIENT_HETEROGENIETY, FIT_INTERCEPT, LR
 from .utils import (
     BetaUpdateData,
     VariableType,
@@ -166,11 +168,12 @@ class ComputationHelper:
         var_y = np.clip(var_y, 1e-10, None)
 
         W = np.diag(((dmu_deta**2) / var_y).reshape(-1))
-        z: np.ndarray = (eta - gamma) + (y - mu) / dmu_deta
+        z: np.ndarray = (eta - gamma) + LR * (y - mu) / dmu_deta
         # z: np.ndarray = eta + (y - mu) / dmu_deta
 
         xw = X.T @ W
         xwx = xw @ X
+        # xwx *= LR
         xwz = xw @ z
         return xwx, xwz
 
@@ -192,102 +195,153 @@ class ComputationHelper:
         return result
 
     @staticmethod
-    def fit_local_gamma(y, offset, family, max_iter=5, tol=1e-8):
-        gamma = 0.0
-        for _ in range(max_iter):
-            eta = gamma + offset
-            mu = family.inverse_link(eta)
-            dmu_deta = family.inverse_deriv(eta)
-            var = family.variance(mu)
-            var = np.clip(var, 1e-10, None)
+    def fit_local_gamma(y, offset, family, max_iter=100, tol=1e-8):
+        """
+        Parameters
+        ----------
+        y : array (n,)
+            Response variable.
+        offset : array (n,)
+            Fixed offset added to the linear predictor.
+        family : statsmodels.genmod.families.Family
+            GLM family (Gaussian, Poisson, Binomial, etc.)
+        max_iter : int
+        tol : float
 
-            # Score (first derivative)
-            grad = np.sum((y - mu) * dmu_deta / var)
+        Returns
+        -------
+        gamma : float
+            Estimated intercept.
+        """
 
-            # Fisher information (negative expected Hessian)
-            w = (dmu_deta**2) / var
-            fisher_info = np.sum(w)
-            fisher_info = np.clip(fisher_info, 1e-10, None)
+        n = len(y)
 
-            step = grad / fisher_info
-            gamma = gamma + step
+        # Design matrix: intercept only
+        X = np.ones((n, 1))
 
-            if np.linalg.norm(step) < tol:
-                break
+        smfamily = fam.Gaussian() if family == Gaussian else fam.Binomial()
+        model = sm.GLM(y.reshape(-1), X, family=smfamily, offset=offset.reshape(-1))
+
+        res = model.fit(maxiter=max_iter, tol=tol, disp=False)
+
+        # Single intercept parameter
+        gamma = float(res.params[0])
+
         return gamma
 
     @staticmethod
-    def fit_multinomial_gamma(y, offset, max_iter=15, tol=1e-8):
-        eta_base = offset
+    def fit_multinomial_gamma(y, offset, max_iter=100, tol=1e-8):
         n, K_minus_1 = y.shape
         K = K_minus_1 + 1
-        # initialize gamma
-        gamma = np.zeros(K_minus_1)
+
+        # Full one-hot
+        y_full = np.column_stack([1 - y.sum(axis=1), y])
+        y_cat = np.argmax(y_full, axis=1)
+
+        # Intercept-only design
+        X = np.ones((n, 1))
+
+        offset_full = np.column_stack([np.zeros(n), offset])
+
+        # offset_full = softmax(offset_full, axis=1)
+
+        model = sm.MNLogit(y_cat, X, offset=offset_full)
+
+        res = model.fit(method="newton", maxiter=max_iter, tol=tol, disp=False)
+
+        # ---- CORRECT ALIGNMENT ----
+        gamma_est = res.params[0, :]  # length = len(estimated_cats)
+        # gamma_full = np.zeros(K_minus_1)
+        gamma_full = np.full(K_minus_1, fill_value=-float("inf"))
+
+        ynames_map = res.model._ynames_map
+        del ynames_map[0]
+
+        for k, v in ynames_map.items():
+            gamma_full[int(v) - 1] = gamma_est[k - 1]
+        return gamma_full
+
+    @staticmethod
+    def fit_local_alpha(y_obs, offset, max_iter=10, tol=1e-6):
+        """
+        Fits local fixed effects (alpha) given a fixed global offset (X * beta).
+
+        Parameters:
+        - y_indices: 1D array of class labels (0 to K-1) for N observations.
+        - offset: N x (K-1) array representing the global component X * beta.
+        - num_categories: Total number of categories (K).
+        - max_iter: Maximum IRLS iterations.
+
+        Returns:
+        - alpha: Array of shape (K-1,) representing the local fixed effects.
+        """
+        N = y_obs.shape[0]
+        K_minus_1 = offset.shape[1]
+
+        # Initialize alpha at zeros
+        alpha = np.zeros(K_minus_1)
+
+        # # Convert y to one-hot encoding (excluding the reference category 0)
+        # # y_obs shape: (N, K-1)
+        # y_obs = np.zeros((N, K_minus_1))
+        # for i, val in enumerate(y_indices):
+        #     if val > 0:
+        #         y_obs[i, val-1] = 1
 
         for iteration in range(max_iter):
-            # eta including gamma, add reference category (0 column)
-            # eta = np.column_stack([np.zeros(n), eta_base + gamma])
+            # 1. Compute Pi (N x K)
+            # eta includes the current alpha + the global offset
+            eta = offset + alpha  # Broadcasting alpha across N rows
 
-            # # Numerically stable softmax: subtract max from each row
-            # eta_max = np.max(eta, axis=1, keepdims=True)
-            # eta_stable = np.clip(eta - eta_max, -50, 50)
-            # exp_eta = np.exp(eta_stable)
-            # p = exp_eta / np.sum(exp_eta, axis=1, keepdims=True)
+            # Add a column of zeros for the reference category (category 0)
+            eta_full = np.hstack([np.zeros((N, 1)), eta])
 
-            p = np.clip(
-                softmax(
-                    np.column_stack([np.zeros(y.shape[0]), eta_base + gamma]), axis=1
-                ),
-                1e-8,
-                1 - 1e-8,
+            # Softmax calculation
+            exp_eta = np.exp(eta_full - np.max(eta_full, axis=1, keepdims=True))
+            pi_full = exp_eta / np.clip(
+                np.sum(exp_eta, axis=1, keepdims=True), 1e-8, None
             )
-            p = p / np.sum(p, axis=1, keepdims=True)  # Re-normalize
 
-            # gradient: sum_i (Y_ik - p_ik)
-            grad = np.sum(y - p[:, 1:], axis=0)
+            # Pi for non-reference categories (N x K-1)
+            pi = pi_full[:, 1:]
 
-            # Hessian: H[a,b] = - sum_i p_ia * (1[a=b] - p_ib)
-            # Vectorized computation to avoid overflow
-            pi = p[:, 1:]  # shape (n, K_minus_1)
+            # 2. Compute Score (Gradient) for alpha: shape (K-1,)
+            # Gradient is the sum of (y_obs - pi) over all observations
+            score = np.sum(y_obs - pi, axis=0)
 
-            # H = -sum_i [diag(pi) - pi @ pi.T]
-            # More stable: compute directly
-            H = np.zeros((K_minus_1, K_minus_1))
-            for i in range(n):
-                pi_i = pi[i, :]
-                # Diagonal elements: -p_a * (1 - p_a)
-                # Off-diagonal: -p_a * (0 - p_b) = p_a * p_b
-                H -= np.diag(pi_i) - np.outer(pi_i, pi_i)
+            # 3. Compute Fisher Information (Hessian)
+            # For an intercept-only model, the Hessian is the sum of the
+            # multinomial variance-covariance matrices across all N.
+            # Hessian shape: (K-1, K-1)
 
-            # Add regularization to prevent singular matrix
-            H_reg = H - np.eye(K_minus_1) * 1e-6
+            # Diagonal part: sum of pi_k * (1 - pi_k)
+            diag_part = np.diag(np.sum(pi * (1 - pi), axis=0))
 
-            # Check if H is reasonable
-            if not np.all(np.isfinite(H_reg)):
-                # Hessian has overflow/underflow, stop iteration
-                break
+            # Off-diagonal part: - sum of pi_k * pi_j
+            off_diag_part = np.zeros((K_minus_1, K_minus_1))
+            for k in range(K_minus_1):
+                for j in range(k + 1, K_minus_1):
+                    val = -np.sum(pi[:, k] * pi[:, j])
+                    off_diag_part[k, j] = val
+                    off_diag_part[j, k] = val
 
-            # Newton step with safer inversion
+            hessian = diag_part + off_diag_part
+
+            # 4. Update alpha
             try:
-                # Try Cholesky decomposition first (if H is negative definite as expected)
-                step = np.linalg.solve(-H_reg, grad)
+                step = np.linalg.solve(hessian, score)
+                alpha += step
             except np.linalg.LinAlgError:
-                # Fall back to pseudo-inverse with safer computation
-                U, s, Vt = np.linalg.svd(H_reg, full_matrices=False)
-                # Only use singular values above threshold
-                s_inv = np.where(np.abs(s) > 1e-10, 1.0 / s, 0)
-                H_inv = Vt.T @ np.diag(s_inv) @ U.T
-                step = H_inv @ grad
+                hinv = np.linalg.pinv(hessian)
+                step = hinv @ score
+                # print("Singular matrix encountered. Data may be perfectly separated.")
+                # break
 
-            # Check for invalid step
-            if not np.all(np.isfinite(step)):
-                break
-
-            # convergence check
+            # Check convergence
             if np.linalg.norm(step) < tol:
                 break
-            gamma = gamma + step
-        return gamma
+
+        return alpha
 
 
 def get_data(
@@ -383,7 +437,11 @@ class CategoricalComputationUnit(ComputationUnit):
                 offset = np.zeros_like(y)
             else:
                 offset = X @ beta
-            gamma = ComputationHelper.fit_multinomial_gamma(y=y, offset=offset)
+            # gamma = ComputationHelper.fit_multinomial_gamma(y=y, offset=offset)
+            gamma = ComputationHelper.fit_local_alpha(y, X @ beta)
+            # if response == "A":
+            #     print(response, "~", predictors)
+            #     print(gamma)
             gamma = np.tile(np.array(gamma), (y.shape[0], 1))
         else:
             gamma = np.zeros_like(y)
@@ -438,13 +496,15 @@ class CategoricalComputationUnit(ComputationUnit):
 
             # z_i = (eta[i] - gamma[i]) + var_i_inv @ (y_i - p_i)  # (J-1)
             # because gamma is only added to mu and not to eta, gamma does not need to be subtracted from eta here
-            z_i = (eta[i]) + var_i_inv @ (y_i - p_i)  # (J-1)
+            z_i = (eta[i]) + LR * var_i_inv @ (y_i - p_i)  # (J-1)
 
             # Compute local contributions to XWX and XWz
             Xi = np.kron(np.eye(num_categories - 1), X[i : i + 1])  # (J-1) x (J-1)*K
             Wi = var_i  # (J-1) x (J-1)
             XWX += Xi.T @ Wi @ Xi
             XWz += Xi.T @ Wi @ z_i
+
+        # XWX *= LR
 
         # Compute log-likelihood
         logprob = np.log(np.clip(mu, 1e-8, 1))
@@ -819,6 +879,7 @@ class Client:
         required_variables: Set[str],
         betas: Dict[Tuple[str, Tuple[str], int], np.ndarray],
     ):
+        # print(self.id)
         betas = self._network_fetch_function(betas)
 
         # test_vars = [
