@@ -230,6 +230,76 @@ class ComputationHelper:
         return gamma
 
     @staticmethod
+    def fit_local_gamma_ordinal(
+        y, offset, family, current_gamma, lr=0.3, momentum=0.1, prev_step=0.0
+    ):
+        # 1. Calculate Initial State
+        eta = current_gamma + offset
+        mu = family.inverse_link(eta)
+
+        # Safety Check: Ordinal models fail if mu hits 0 or 1
+        mu = np.clip(mu, 1e-6, 1 - 1e-6)
+
+        dmu_deta = family.inverse_deriv(eta)
+        var = family.variance(mu)
+        var = np.clip(var, 1e-8, None)
+
+        # 2. Compute Gradient (Score)
+        grad = np.sum((y - mu) * dmu_deta / var)
+
+        # 3. Compute Fisher Info (Hessian)
+        # Using a relative ridge: 1% of the average information
+        w = (dmu_deta**2) / var
+        fisher_info = np.sum(w)
+        ridge = max(1e-4, 0.01 * fisher_info)
+        fisher_info += ridge
+
+        # 4. Compute Raw Step
+        raw_step = grad / fisher_info
+
+        # --- ROBUSTNESS LAYER: Clipping ---
+        # Never allow gamma to jump more than 1.0 units in one go
+        # Large jumps in ordinal models often move mu to 0 or 1, killing the gradient
+        max_change = 1.0
+        if abs(raw_step) > max_change:
+            raw_step = np.sign(raw_step) * max_change
+
+        # 5. Apply Damping and Momentum
+        total_update = (lr * raw_step) + (momentum * prev_step)
+
+        # Final check: If the update creates NaNs, kill the update
+        if np.isnan(total_update):
+            return current_gamma, 0.0
+
+        updated_gamma = current_gamma + total_update
+
+        return updated_gamma, total_update
+
+    @staticmethod
+    def fit_local_gammax(y, offset, family, max_iter=5, tol=1e-8):
+        gamma = 0.0
+        for _ in range(max_iter):
+            eta = gamma + offset
+            mu = family.inverse_link(eta)
+            dmu_deta = family.inverse_deriv(eta)
+            var = family.variance(mu)
+            var = np.clip(var, 1e-10, None)
+
+            # Score (first derivative)
+            grad = np.sum((y - mu) * dmu_deta / var)
+
+            # Fisher information (negative expected Hessian)
+            w = (dmu_deta**2) / var
+            fisher_info = np.sum(w)
+            fisher_info = np.clip(fisher_info, 1e-10, None)
+
+            step = grad / fisher_info
+
+            if np.linalg.norm(step) < tol:
+                break
+        return gamma
+
+    @staticmethod
     def fit_multinomial_gamma(y, offset, max_iter=100, tol=1e-8):
         n, K_minus_1 = y.shape
         K = K_minus_1 + 1
@@ -262,7 +332,7 @@ class ComputationHelper:
         return gamma_full
 
     @staticmethod
-    def fit_local_alpha(y_obs, offset, max_iter=10, tol=1e-6):
+    def fit_local_alphax(y_obs, offset, max_iter=10, tol=1e-6):
         """
         Fits local fixed effects (alpha) given a fixed global offset (X * beta).
 
@@ -302,6 +372,9 @@ class ComputationHelper:
                 np.sum(exp_eta, axis=1, keepdims=True), 1e-8, None
             )
 
+            pi_full = np.clip(pi_full, 1e-6, 1 - 1e-6)
+            pi_full /= np.sum(pi_full, axis=1, keepdims=True)
+
             # Pi for non-reference categories (N x K-1)
             pi = pi_full[:, 1:]
 
@@ -326,21 +399,165 @@ class ComputationHelper:
                     off_diag_part[j, k] = val
 
             hessian = diag_part + off_diag_part
+            hessian += 1e-3 * np.eye(K_minus_1)
 
             # 4. Update alpha
             try:
+                # step = np.linalg.solve(hessian, score)
                 step = np.linalg.solve(hessian, score)
                 alpha += step
             except np.linalg.LinAlgError:
-                hinv = np.linalg.pinv(hessian)
-                step = hinv @ score
+                # hinv = np.linalg.pinv(hessian)
+                # step = hinv @ score
+                # alpha += step
                 # print("Singular matrix encountered. Data may be perfectly separated.")
-                # break
-
+                break
+            # alpha -= np.mean(alpha)
             # Check convergence
             if np.linalg.norm(step) < tol:
                 break
+        # print(alpha)
+        return alpha
 
+    @staticmethod
+    def fit_local_alphax(y_obs, offset, max_iter=20, tol=1e-8):
+        """
+        Profile multinomial intercepts alpha given offset = X beta.
+
+        Parameters
+        ----------
+        y_obs : (N, K-1) one-hot encoded (excluding reference)
+        offset : (N, K-1)
+        """
+
+        N, K_minus_1 = y_obs.shape
+        alpha = np.zeros(K_minus_1)
+
+        # observed class counts
+        n_k = np.sum(y_obs, axis=0)
+
+        for _ in range(max_iter):
+            eta = offset + alpha
+            eta_full = np.hstack([np.zeros((N, 1)), eta])
+
+            exp_eta = np.exp(eta_full - np.max(eta_full, axis=1, keepdims=True))
+            pi_full = exp_eta / np.sum(exp_eta, axis=1, keepdims=True)
+
+            pi = pi_full[:, 1:]
+            mu_k = np.sum(pi, axis=0)
+
+            # fixed-point update
+            delta = np.log(np.clip(n_k, 1e-12, None)) - np.log(
+                np.clip(mu_k, 1e-12, None)
+            )
+            alpha += delta
+
+            # enforce identifiability
+            # alpha -= np.mean(alpha)
+
+            if np.linalg.norm(delta) < tol:
+                break
+        return alpha
+
+    @staticmethod
+    def fit_local_alpha(y_obs, offset, max_iter=10, tol=1e-6):
+        """
+        Fits local fixed effects (alpha) given a fixed global offset (X * beta).
+
+        Parameters:
+        - y_obs: (N, K-1) one-hot encoded responses (excluding reference category)
+        - offset: (N, K-1) global offset
+        - max_iter: maximum Fisher scoring iterations
+        - tol: convergence tolerance
+
+        Returns:
+        - alpha: (K-1,) local fixed effects
+        """
+
+        N, K_minus_1 = y_obs.shape
+        alpha = np.zeros(K_minus_1)
+
+        # --------------------------------------------------
+        # 1. Detect locally present categories
+        # --------------------------------------------------
+        counts = y_obs.sum(axis=0)
+        present = counts > 0
+
+        # If *no* non-reference category is present, nothing is identifiable
+        if not np.any(present):
+            return alpha
+
+        # Optional: approximate -inf for absent categories
+        NEG_INF = -float("inf")  # -3000.0
+        alpha[~present] = NEG_INF
+
+        # Work only on present categories
+        idx = np.where(present)[0]
+        y_obs_p = y_obs[:, idx]
+        offset_p = offset[:, idx]
+        alpha_p = alpha[idx]
+
+        for _ in range(max_iter):
+            # --------------------------------------------------
+            # 2. Linear predictors
+            # --------------------------------------------------
+            eta_p = offset_p + alpha_p
+            eta_full = np.hstack(
+                [
+                    np.zeros((N, 1)),  # reference category
+                    eta_p,
+                ]
+            )
+
+            # --------------------------------------------------
+            # 3. Softmax
+            # --------------------------------------------------
+            exp_eta = np.exp(eta_full - np.max(eta_full, axis=1, keepdims=True))
+            pi_full = exp_eta / np.sum(exp_eta, axis=1, keepdims=True)
+
+            # Non-reference probabilities for present categories
+            pi_p = pi_full[:, 1:][:, : len(idx)]
+
+            # --------------------------------------------------
+            # 4. Score
+            # --------------------------------------------------
+            score = np.sum(y_obs_p - pi_p, axis=0)
+
+            # --------------------------------------------------
+            # 5. Fisher Information
+            # --------------------------------------------------
+            Kp = len(idx)
+            hessian = np.zeros((Kp, Kp))
+
+            for k in range(Kp):
+                hessian[k, k] = np.sum(pi_p[:, k] * (1 - pi_p[:, k]))
+
+            for k in range(Kp):
+                for j in range(k + 1, Kp):
+                    val = -np.sum(pi_p[:, k] * pi_p[:, j])
+                    hessian[k, j] = val
+                    hessian[j, k] = val
+
+            # Small ridge for numerical stability (does NOT bias meaningfully)
+            hessian += 1e-6 * np.eye(Kp)
+
+            # --------------------------------------------------
+            # 6. Fisher scoring update
+            # --------------------------------------------------
+            try:
+                step = np.linalg.solve(hessian, score)
+            except np.linalg.LinAlgError:
+                break
+
+            alpha_p += step
+
+            if np.linalg.norm(step) < tol:
+                break
+
+        # --------------------------------------------------
+        # 7. Write back results
+        # --------------------------------------------------
+        alpha[idx] = alpha_p
         return alpha
 
 
@@ -378,6 +595,7 @@ class ContinousComputationUnit(ComputationUnit):
         response: str,
         predictors: List[str],
         beta: np.ndarray,
+        **kwargs,
     ):
         y, X = get_data(data, response, predictors)
         if X is None:
@@ -396,6 +614,7 @@ class BinaryComputationUnit(ComputationUnit):
         response: str,
         predictors: List[str],
         beta: np.ndarray,
+        **kwargs,
     ):
         y, X = get_data(data, response, predictors)
         if X is None:
@@ -413,6 +632,7 @@ class CategoricalComputationUnit(ComputationUnit):
         response: str,
         predictors: List[str],
         beta: np.ndarray,
+        **kwargs,
     ):
         # Identify the dummy columns for the response
         response_dummy_columns = [
@@ -423,6 +643,10 @@ class CategoricalComputationUnit(ComputationUnit):
         response_dummy_columns = sorted(response_dummy_columns)
 
         y_full, X = get_data(data, response_dummy_columns, predictors)
+
+        # X = np.vstack([X, np.zeros((y_full.shape[1], X.shape[1]))])
+        # y_full = np.vstack([y_full, np.eye(y_full.shape[1])])
+
         y = y_full[:, 1:]
 
         if X is not None:
@@ -441,7 +665,7 @@ class CategoricalComputationUnit(ComputationUnit):
             gamma = ComputationHelper.fit_local_alpha(y, X @ beta)
             # if response == "A":
             #     print(response, "~", predictors)
-            #     print(gamma)
+            # print(gamma)
             gamma = np.tile(np.array(gamma), (y.shape[0], 1))
         else:
             gamma = np.zeros_like(y)
@@ -510,11 +734,13 @@ class CategoricalComputationUnit(ComputationUnit):
         logprob = np.log(np.clip(mu, 1e-8, 1))
         llf = np.sum(y_full * logprob)
 
+        # print(np.linalg.norm(XWz.reshape(-1), 2))
+
         # only use non-dummy values in rss and n for gaussian regression
         return {"llf": llf, "xwx": XWX, "xwz": XWz.reshape(-1, 1), "rss": 0, "n": 0}
 
 
-class OrdinalComputationUnit(ComputationUnit):
+class OrdinalComputationUnit:  # (ComputationUnit):
     @staticmethod
     def fix_sign(mus_diff):
         # fix negative probs
@@ -529,13 +755,17 @@ class OrdinalComputationUnit(ComputationUnit):
         mus_diff = [np.clip(p, 1e-8, None) for p in mus_diff]
         return mus_diff
 
-    @staticmethod
+    # @staticmethod
     def compute(
         data: pl.DataFrame,
         response: str,
         predictors: List[str],
         beta: np.ndarray,
+        **kwargs,
     ):
+        # gamma_store = kwargs["ordinal_gamma_store"]
+        # regression_key = (response, tuple(sorted(predictors)))
+
         # Identify the dummy columns for the response
         response_dummy_columns = [
             c for c in data.columns if c.startswith(f"{response}{ordinal_separator}")
@@ -566,6 +796,27 @@ class OrdinalComputationUnit(ComputationUnit):
                 level_eta, level_mu, level_gamma = ComputationHelper.run_prediction(
                     y=level_y, X=X, beta=beta_i, family=Binomial
                 )
+                # print(gamma_store)
+                # if regression_key not in gamma_store:
+                #     gamma_store[regression_key] = {}
+                # if level_int not in gamma_store[regression_key]:
+                #     gamma_store[regression_key][level_int] = 0
+                # level_gamma, update = ComputationHelper.fit_local_gamma_ordinal(
+                #     y,
+                #     X @ beta,
+                #     Binomial,
+                #     gamma_store[regression_key][level_int],
+                # )
+                # gamma_store[regression_key][level_int] = level_gamma
+                # level_gamma = self.gamma_store[regression_key][
+                #     level_int
+                # ] + gamma_blend_factor * (
+                #     level_gamma - self.gamma_store[regression_key][level_int]
+                # )
+                # self.gamma_store[regression_key][level_int] = level_gamma
+
+                # if len(predictors) == 2:
+                #     print(level_int, level_gamma)
                 mus.append(level_mu)
                 level_xwx, level_xwz = ComputationHelper.get_irls_step(
                     y=level_y,
@@ -672,8 +923,6 @@ class Client:
         self.expanded_data: Optional[pl.DataFrame] = None
 
         self.contributing_clients: Dict[str, Client] = {}
-        # self.received_masks = {}
-        # self.send_masks = {}
         self.response_masking = {}
 
     def get_id(self):
@@ -750,6 +999,7 @@ class Client:
         )
 
         self.expanded_data = _data
+        self.local_effect_store_ordinal = {}
 
     def exchange_masks(self, betas):
         betas = self._network_fetch_function(betas)
@@ -812,49 +1062,6 @@ class Client:
             "n": n_mask,
         }
 
-    # def combine_masks(self, betas):
-    #     betas = self._network_fetch_function(betas)
-    #     if len(self.contributing_clients) == 0:
-    #         return
-    #     for test_key in betas:
-    #         assert test_key in self.received_masks, (
-    #             "Client did not receive required mask"
-    #         )
-    #         assert test_key in self.send_masks, "Client did not send required mask"
-    #         assert len(self.received_masks[test_key]) == len(
-    #             self.send_masks[test_key]
-    #         ), "Number of send and received masks does not match"
-
-    #         if test_key not in self.response_masking:
-    #             self.response_masking[test_key] = {}
-
-    #         llf_masks = []
-    #         xwx_masks = []
-    #         xwz_masks = []
-    #         rss_masks = []
-    #         n_masks = []
-    #         for sender_id, masks1 in self.received_masks[test_key].items():
-    #             assert sender_id in self.send_masks[test_key], (
-    #                 "Received a mask from a client no mask has been sent to"
-    #             )
-
-    #             masks2 = self.send_masks[test_key][sender_id]
-    #             llf_masks.append(masks1["llf"] - masks2["llf"])
-    #             xwx_masks.append(masks1["xwx"] - masks2["xwx"])
-    #             xwz_masks.append(masks1["xwz"] - masks2["xwz"])
-    #             rss_masks.append(masks1["rss"] - masks2["rss"])
-    #             n_masks.append(masks1["n"] - masks2["n"])
-
-    #         self.response_masking[test_key] = {
-    #             "llf": sum(llf_masks),
-    #             "xwx": sum(xwx_masks),
-    #             "xwz": sum(xwz_masks),
-    #             "rss": sum(rss_masks),
-    #             "n": sum(n_masks),
-    #         }
-    #         del self.received_masks[test_key]
-    #         del self.send_masks[test_key]
-
     def apply_masks(self, test_key, irls_step_result):
         if not ADDITIVE_MASKING:
             return irls_step_result
@@ -879,13 +1086,7 @@ class Client:
         required_variables: Set[str],
         betas: Dict[Tuple[str, Tuple[str], int], np.ndarray],
     ):
-        # print(self.id)
         betas = self._network_fetch_function(betas)
-
-        # test_vars = [
-        #     {resp_var} | set(cond_vars) for resp_var, cond_vars, _ in betas.keys()
-        # ]
-        # test_vars = set.union(*test_vars)
 
         if any([v not in self.schema for v in required_variables]):
             result = {}
@@ -901,6 +1102,8 @@ class Client:
                     },
                 )
             return result
+
+        # print("Client", list("ABCDEFGH")[int(self.id) - 1])
 
         results = {}
         for test_key, beta in betas.items():
@@ -921,7 +1124,11 @@ class Client:
                 new_cond_vars.append(constant_colname)
             cond_vars = new_cond_vars
             result = regression_computation_map[self.schema[resp_var]].compute(
-                self.expanded_data, resp_var, cond_vars, beta
+                self.expanded_data,
+                resp_var,
+                cond_vars,
+                beta,
+                ordinal_gamma_store=self.local_effect_store_ordinal,
             )
             if len(self.contributing_clients) > 0:
                 result = self.apply_masks(test_key, result)

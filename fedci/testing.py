@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Set, Tuple
 import numpy as np
 import scipy
 
-from .env import DEBUG, FIT_INTERCEPT, LINE_SEARCH, RIDGE
+from .env import DEBUG, FIT_INTERCEPT, LINE_SEARCH, LM_DAMPING, RIDGE
 from .utils import BetaUpdateData, VariableType
 
 
@@ -14,7 +14,7 @@ class RegressionTest:
         response_type: VariableType,
         predictors: List[str],
         params: Tuple[int, int],
-        convergence_threshold: float = 1e-3,
+        convergence_threshold: float = 1e-6,
         max_iterations: int = 25,
     ):
         self.response: str = response
@@ -29,6 +29,7 @@ class RegressionTest:
         self.convergence_threshold = convergence_threshold
         self.max_iterations = max_iterations
         self.early_stop = False
+        self.bad_fit = False
 
         self.previous_xwx = None
         self.previous_xwz = None
@@ -90,8 +91,9 @@ class RegressionTest:
                 penalty_matrix = RIDGE * np.eye(k)
             xwx += penalty_matrix
 
-        lm_penalty_matrix = self.lm_lambda * np.eye(k)
-        xwx += lm_penalty_matrix
+        if LM_DAMPING:
+            lm_penalty_matrix = self.lm_lambda * np.eye(k)
+            xwx += lm_penalty_matrix
 
         try:
             xwx_inv = np.linalg.inv(xwx)
@@ -121,33 +123,51 @@ class RegressionTest:
         xwx = sum([_update.xwx for _update in update])
         xwz = sum([_update.xwz for _update in update])
         n = int(sum([_update.n for _update in update]))
-        # if self.response == "A":
-        #     if abs(self.llf - llf) > 10:
-        #         print(self.llf, llf, self.alpha, self.response, self.predictors)
+        # if self.response == "A" and self.predictors == {"B", "C", "E"}:
+        #     print(self.lm_lambda)
+        # if abs(self.llf - llf) > 10:
+        #    print(self.llf, llf, self.alpha, self.response, self.predictors)
         if self.response_type == VariableType.CONTINUOS and n > 0:
             rss = sum([_update.rss for _update in update])
             sigma2 = np.clip(rss / n, 1e-10, None)
             llf = -0.5 * n * np.log(2 * np.pi * sigma2) - 0.5 * n
             llf = llf.astype(np.float64).item()  # uses np.float128 for higher precision
 
+        if self.response == "E" and self.predictors == {"C"}:
+            # print(np.linalg.eigvals(xwx))
+            # print(np.linalg.norm(xwz, 2))
+            # print(self.lm_lambda)
+            # print(self.llf, llf)
+            # print(xwx)
+            pass
+
         if LINE_SEARCH and self.llf > llf:
+            # if self.response == "E" and self.predictors == {"C"}:
+            #     print(self.llf, llf)
             # if no small step improves llf, stop fitting
             if self.alpha <= 1e-8:
-                if self.reposition_count > 10:
+                self.alpha = 1.0
+                if self.reposition_count >= 10:
+                    # asd
+                    self.bad_fit = True
                     self.early_stop = True
                     return
-                self.alpha = 1.0
-                self.lm_lambda *= 10
+                if self.lm_lambda <= 1:
+                    self.lm_lambda = 1
+                if self.lm_lambda <= 1e8:
+                    self.lm_lambda *= 2
                 self.beta = self._get_new_beta(
                     self.previous_xwx,
-                    self.previous_xwz,
-                    # + np.random.normal(0, 1e-8, self.previous_xwz.shape),
+                    self.previous_xwz
+                    + np.random.normal(0, 1e-3, self.previous_xwz.shape),
                 )
                 self.reposition_count += 1
                 return
             # got worse
             # For this step, no llf is available. So check with previous llf and redo last update with new alpha
+
             self.alpha *= 0.5
+
             # self.iterations += 1
             # self.max_iterations += 1
 
@@ -162,7 +182,7 @@ class RegressionTest:
         beta = self._get_new_beta(xwx, xwz)
         # TODO: improve with variables
         # if alpha <1e-8 und update wird trotzdem gemacht: break, test ende
-        if np.linalg.norm(self.beta - beta) < 1e-5:
+        if self.iterations > 2 and np.linalg.norm(self.beta - beta) < 1e-5:
             self.early_stop = True
             return
         self.beta = beta
@@ -198,6 +218,7 @@ class LikelihoodRatioTest:
         self.unrestricted_test: RegressionTest = unrestricted_test
 
         self.iterations = 0
+        self.bad_fit = False
 
         self.p_value: Optional[float] = None
 
@@ -242,6 +263,7 @@ class LikelihoodRatioTest:
         )
         if finished and self.p_value is None:
             self._set_p_value()
+            self.bad_fit = self.restricted_test.bad_fit | self.unrestricted_test.bad_fit
         return finished
 
     def get_test_parameters(self):
@@ -325,6 +347,7 @@ class SymmetricLikelihoodRatioTest:
         self.v1 = lrt2.response
         self.conditioning_set = lrt1.conditioning_set
         self.iterations = 0
+        self.bad_fit = False
 
         if lrt1.response < lrt2.response:
             self.lrt1: LikelihoodRatioTest = lrt1
@@ -357,6 +380,7 @@ class SymmetricLikelihoodRatioTest:
         finished = self.lrt1.is_finished() and self.lrt2.is_finished()
         if finished and self.p_value is None:
             self._set_p_value()
+            self.bad_fit = self.lrt1.bad_fit | self.lrt2.bad_fit
         return finished
 
     def get_test_parameters(self):
@@ -383,6 +407,13 @@ class SymmetricLikelihoodRatioTest:
         self.iterations += 1
 
     def _set_p_value(self):
+        # if self.lrt1.bad_fit and self.lrt2.bad_fit:
+        #     self.p_value = -1
+        # elif self.lrt1.bad_fit:
+        #     self.p_value = self.lrt2.p_value
+        # elif self.lrt2.bad_fit:
+        #     self.p_value = self.lrt1.p_value
+        # else:
         self.p_value = min(
             2 * min(self.lrt1.p_value, self.lrt2.p_value),
             max(self.lrt1.p_value, self.lrt2.p_value),

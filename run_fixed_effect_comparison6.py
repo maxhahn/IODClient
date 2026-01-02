@@ -17,8 +17,8 @@ from rpy2.robjects import numpy2ri, pandas2ri
 
 import fedci
 
-cb.consolewrite_print = lambda x: None
-cb.consolewrite_warnerror = lambda x: None
+# cb.consolewrite_print = lambda x: None
+# cb.consolewrite_warnerror = lambda x: None
 
 ro.r["source"]("./ci_functions2.r")
 get_data_f = ro.globalenv["get_data"]
@@ -258,7 +258,7 @@ def test_pooled_data(dfs, labels):
 
     intersection_df = pl.concat(
         [df.select(intersection_labels + ["CLIENT"]) for df in dfs]
-    )
+    ).sort(cs.string() | cs.integer() | cs.boolean())
 
     l1 = labels[0]
     l2 = labels[1]
@@ -279,7 +279,7 @@ def test_pooled_data(dfs, labels):
         ]
     )
 
-    l1_df = pl.concat(l1_dfs)
+    l1_df = pl.concat(l1_dfs).sort(cs.string() | cs.integer() | cs.boolean())
     l1_df = l1_df.select(
         [col.name for col in l1_df.select(pl.all().n_unique() > 1) if col.item()]
     )
@@ -287,7 +287,7 @@ def test_pooled_data(dfs, labels):
     # if len(l1_df.columns) != 5:
     #     print("L1 lacks col")
 
-    l2_df = pl.concat(l2_dfs)
+    l2_df = pl.concat(l2_dfs).sort(cs.string() | cs.integer() | cs.boolean())
     l2_df = l2_df.select(
         [col.name for col in l2_df.select(pl.all().n_unique() > 1) if col.item()]
     )
@@ -317,9 +317,9 @@ def test_pooled_data(dfs, labels):
     intersection_result_df = remove_client_from_pooled_result(
         *mxm_ci_test(intersection_df)
     )
+    l1_result_df = remove_client_from_pooled_result(*mxm_ci_test(l1_df))
     # if len(intersection_df.columns) != 4:
     #     print("Linter lacks col")
-    l1_result_df = remove_client_from_pooled_result(*mxm_ci_test(l1_df))
 
     l1_result_df = l1_result_df.join(
         intersection_result_df, on=["ord", "X", "Y", "S"], how="anti"
@@ -383,7 +383,8 @@ def test_dataset(df, labels):
     t2 = time.time()
 
     # xdfs = df.sort("CLIENT", pl.exclude("CLIENT")).partition_by("CLIENT")
-    # xdfs = [d.select(labels[1] + ["CLIENT"]) for i, d in enumerate(xdfs) if i % 2 == 1]
+    # # xdfs = [d.select(labels[1] + ["CLIENT"]) for i, d in enumerate(xdfs) if i % 2 == 1]
+    # xdfs = [d.select(["A", "C", "CLIENT"]) for i, d in enumerate(xdfs)]
     # server = fedci.Server(
     #     [fedci.Client(str(i), d) for i, d in enumerate(xdfs, start=1)]
     # )
@@ -394,11 +395,13 @@ def test_dataset(df, labels):
 
     # x = server.test("A", "C", ["B", "D"])
     # x = server.test("A", "C", ["E"])
-    # x = server.test("C", "E", [])
+    # x = server.test("A", "C", ["CLIENT"])
+    x = server.test("A", "E", ["C"])
     # x = server.test("A", "E", ["B", "C", "CLIENT"])
-    # x = server.test("A", "E", ["C"])
-    # print(x)
-    # asd
+    # x = server.test("B", "C", ["A", "D"])
+    # x = server.test("A", "E", ["B", "C"])
+    print(x)
+    asd
 
     fedci_results = server.run()
     t3 = time.time()
@@ -419,11 +422,15 @@ seed_start = 10000
 num_runs = 30
 SEEDS = range(seed_start, seed_start + num_runs)
 SEEDS = [10001]
-SAMPLES = [500]
-CLIENTS = [8]
+SAMPLES = [2500]
+CLIENTS = [4]
 
 pag_ids_to_test = [18]
-#  A   ┆ C   ┆ E   ┆ 18     ┆ 10000 ┆ 8          ┆ 500
+#  │ B   ┆ C   ┆ A,D ┆ 18     ┆ 10019 ┆ 8          ┆ 2500
+#    A   ┆ B   ┆ C,E ┆ 18     ┆ 10000 ┆ 4          ┆ 5000
+#    A   ┆ E   ┆ B,C ┆ 18     ┆ 10001 ┆ 8          ┆ 500
+#    A   ┆ C   ┆     ┆ 18     ┆ 10001 ┆ 8          ┆ 1000        ┆ 0.068394      ┆ 0.34866
+#    A   ┆ E   ┆ C   ┆ 18     ┆ 10001 ┆ 4          ┆ 2500
 
 
 # print(pag_ids_to_test)
@@ -515,6 +522,11 @@ for pag_id in tqdm(pag_ids_to_test, position=0, leave=True):
                 )
 
                 print(df_result.drop(cs.contains("runtime")))
+                print(
+                    df_result.drop(cs.contains("runtime"))
+                    .filter(pl.col("X") == "A")
+                    .filter(pl.col("Y") == "B")
+                )
 
                 print(
                     df_result.filter(
@@ -539,101 +551,62 @@ for pag_id in tqdm(pag_ids_to_test, position=0, leave=True):
                 df_result.write_parquet(target_file)
 
 """
-Testing if X= 1 is indep of Y= 4 given S={ 2,3,5 }
+Testing if X= 1 is indep of Y= 4 given S={ 3,5 }
 Running ordinal regression for  4
-[1] "DOFs 9; T 13.1320471215107; pval 0.156721738701227"
+[1] "DOFs 9; T 15.9753935124704; pval 0.0673972169997102"
 $message
 NULL
 
 $be
-                     Y1          Y2          Y3
-(Intercept) -1.82325542 -1.00713444 -0.29457017
-B            0.42745797  0.40077724  0.43147958
-C           -0.51752131 -0.56988198 -0.46443973
-CLIENTD      0.26868128  0.26568472  0.57208661
-CLIENTF      0.01957009  0.22799575  0.54803317
-CLIENTH     -0.04516974  0.03609004 -0.03229317
+                    Y1         Y2         Y3
+(Intercept)  0.9763096  1.7402639  2.6879178
+C           -0.1858732 -0.2257430 -0.3733794
+CLIENTB     -0.2107345 -0.3699325 -0.5462503
 
 $devi
-[1] 606.1323
+[1] 2339.91
 
 $message
-[1] "problematic region"
+NULL
 
 $be
-                      Y1          Y2           Y3
-(Intercept)  14.39200422  14.6064102  14.38424983
-B             0.67065969   0.5237809   0.56805249
-C            -0.63172937  -0.6311986  -0.50819549
-CLIENTD       0.36816309   0.3407560   0.61221563
-CLIENTF       0.28743679   0.3783428   0.69301630
-CLIENTH      -0.02259935   0.0523801  -0.05860584
-AB          -16.42537671 -15.5887023 -13.92284988
-AC          -16.77638679 -15.9000058 -14.94477864
-AD          -15.70943546 -15.3969806 -14.77796058
+                    Y1         Y2         Y3
+(Intercept)  0.5504733  1.0638319  1.7254969
+C           -0.1960920 -0.2396880 -0.3917185
+CLIENTB     -0.1093857 -0.4441255 -0.7748229
+AB           0.6134588  0.8835081  1.2552273
+AC           0.3929779  0.8241394  1.3307232
+AD           0.2895338  0.7265759  1.1574153
 
 $devi
-[1] 593.0003
+[1] 2323.935
 
 Running multinomial regression for  1
 Call:
 nnet::multinom(formula = ydat ~ ., data = ds0, trace = FALSE)
 
 Coefficients:
-  (Intercept)          B          C  CLIENTD  CLIENTF  CLIENTH
-B    3.764781 -2.4125371 -0.7830898 8.556505 6.935251 8.860562
-C    4.631544 -0.2427312 -1.2475728 8.623797 8.559865 7.949359
-D    4.459566 -2.5626729 -0.5671576 8.338900 7.006989 8.640469
+  (Intercept)         C  CLIENTB
+B   1.0570614 0.2539361 11.12926
+C   0.5005523 0.1780510 13.79980
+D  -2.0289295 0.1902302 17.22232
 
-Residual Deviance: 324.1434
-AIC: 360.1434
+Residual Deviance: 2237.774
+AIC: 2255.774
 Call:
 nnet::multinom(formula = ydat ~ ., data = ds1, trace = FALSE)
 
 Coefficients:
-  (Intercept)        B         C  CLIENTD  CLIENTF  CLIENTH      E.L       E.Q
-B    578.2766 90.33196 -193.3160 364.6822 314.6807 466.0497 493.9996 -263.5795
-C    578.8170 92.65458 -193.9120 365.0285 316.7151 465.2229 494.5150 -262.8914
-D    578.5735 90.24801 -193.1502 364.7972 315.3003 466.0260 493.7284 -262.1260
-       E.C
-B 154.8655
-C 155.3483
-D 155.3182
+  (Intercept)         C  CLIENTB        E.L        E.Q          E.C
+B   0.7687672 0.2974033 10.37071 -0.9496999 -0.3600327 -0.099469863
+C   0.2855531 0.2185133 13.05520 -0.9910809 -0.6441314 -0.009132791
+D  -2.1922699 0.2227308 16.47032 -0.8758148 -0.6051897  0.086314016
 
-Residual Deviance: 303.0852
-AIC: 357.0852
-p1: 0.1567217 and p2: 0.01239417
-
+Residual Deviance: 2220.91
+AIC: 2256.91
+p1: 0.06739722 and p2: 0.05089488
 """
 
 """
-*** Combining p values for symmetry of tests between A and E given {'B', 'C'}
-p value A: 2.463955422229743e-06
-p value E: 0.15562032008618165
-p value = 0.0000
-*** Final betas
-A ~ B,C,1 after 2 iterations
-[-1.9530366274629047, -0.8892184313447579, -0.24933323106083555]
-[-0.3236959045428933, -1.176390984967738, -0.9129326262439513]
-[-2.055023172437948, -0.7029239730195322, -0.3272504597970568]
-A ~ B,C,E,1 after 7 iterations
-[15.57148601345034, -36.85794679706305, -70.98864283306466, -34.58835930022906, -132.9615037329495, 79.7453506521997]
-[17.88843167473169, -37.45149294121802, -71.8937280997925, -35.51924052205936, -134.30967132002115, 79.46650612412486]
-[15.486681931786734, -36.69165440800862, -70.82655368029373, -35.59625642219544, -134.69761011749506, 80.0323470641888]
-E ~ B,C,1 after 4 iterations
-[0.42707325152022085, -0.517371475997744, -0.29311366763609426]
-[0.40004919561602603, -0.5694688522239814, -0.2496235210821584]
-[0.4302684751715038, -0.4635085423351382, -0.21224084185237208]
-E ~ A,B,C,1 after 4 iterations
-[-8.226395823198583, -8.574910247282777, -7.510208734437245, 0.6687044779885277, -0.6309269331256153, 7.817971327430821]
-[-6.227188133915537, -6.53519233431494, -6.035308374053146, 0.5210322257141814, -0.6297707800641453, 6.051120293671874]
-[-4.4394322853483175, -5.455965760775356, -5.293555305352442, 0.5636747558507881, -0.5056436288604196, 5.011902091736474]
 
-"""
-
-
-"""
-A ~ B,C,CLIENT,E,1 after 16 iterations
-[2.7830023431884356, -9.943077391660708, 5.611796044457006, 8.83756638164465, 13.071594527539556, -18.850020472575128, 0.6943110692355211, 1.034069258038215, 23.13555037084006]
-[5.114771708837004, -10.542948789641384, 5.965033296169628, 10.884728909358884, 12.245951687932335, -19.768892937500713, -0.24244859318622053, -0.31832405367194433, 24.46882611120256]
 """

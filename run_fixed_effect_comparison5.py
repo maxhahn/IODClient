@@ -28,6 +28,7 @@ run_ci_test_f = ro.globalenv["run_ci_test"]
 run_ci_test2_f = ro.globalenv["run_ci_test2"]
 msep_f = ro.globalenv["msep"]
 load_pags = ro.globalenv["load_pags"]
+ci_mxm_test_f = ro.globalenv["ci_mxm_test"]
 
 
 test_pags, label_splits = load_pags()
@@ -243,11 +244,16 @@ def test_pooled_data(dfs, labels):
         else:
             l2_dfs.append(df.select(l2 + ["CLIENT"]))
 
+    print("l1", l1, "l2", l2)
+
+    l2_result_df = remove_client_from_pooled_result(*mxm_ci_test(pl.concat(l2_dfs)))
+    cb.consolewrite_print = lambda x: None
+    cb.consolewrite_warnerror = lambda x: None
+
+    l1_result_df = remove_client_from_pooled_result(*mxm_ci_test(pl.concat(l1_dfs)))
     intersection_result_df = remove_client_from_pooled_result(
         *mxm_ci_test(intersection_df)
     )
-    l1_result_df = remove_client_from_pooled_result(*mxm_ci_test(pl.concat(l1_dfs)))
-    l2_result_df = remove_client_from_pooled_result(*mxm_ci_test(pl.concat(l2_dfs)))
 
     l1_result_df = l1_result_df.join(
         intersection_result_df, on=["ord", "X", "Y", "S"], how="anti"
@@ -260,42 +266,32 @@ def test_pooled_data(dfs, labels):
 
 
 def test_dataset(df, labels):
-    dfs = df.partition_by("CLIENT")
+    dfs = df.sort("CLIENT", pl.exclude("CLIENT")).partition_by("CLIENT")
+
+    # with (ro.default_converter + pandas2ri.converter).context():
+    #     # # load local-ci script
+    #     # ro.r['source']('./local-ci.r')
+    #     # # load function from R script
+    #     # run_ci_test_f = ro.globalenv['run_ci_test']
+    #     # converting it into r object for passing into r function
+    #     df_r = ro.conversion.get_conversion().py2rpy(df.to_pandas())
+    #     # Invoking the R function and getting the result
+    #     result = ci_mxm_test_f(df_r, "B", "E", ["A", "C"])
+    #     df_pvals = ro.conversion.get_conversion().rpy2py(result["citestResults"])
+    #     print(result)
+    # asd
+    # Converting it back to a pandas dataframe.
+
+    # s1 = fedci.Server([fedci.Client("x", df)])
+    # x = s1.test("B", "E", ["A", "C", "CLIENT"])
+    # print(x)
+    # asd
 
     # STEP 1: Test with pooled data
     t0 = time.time()
     pooled_result_df = test_pooled_data(dfs, labels)
     t1 = time.time()
-    # pooled_result_df, pooled_result_labels = mxm_ci_test(df)
-    # pooled_result_df = pl.from_pandas(pooled_result_df)
 
-    # client_var_idx = str(pooled_result_labels.index("CLIENT") + 1)  # 1 indexed
-    # pooled_result_df = pooled_result_df.filter(
-    #     (
-    #         ~(
-    #             (pl.col("X").cast(pl.Utf8) == client_var_idx)
-    #             | (pl.col("Y").cast(pl.Utf8) == client_var_idx)
-    #         )
-    #         & pl.col("S")
-    #         .str.split(",")
-    #         # .list.filter(pl.element().str.len_chars() > 0)
-    #         # .cast(pl.List(pl.Int32))
-    #         .list.contains(client_var_idx)
-    #     )
-    # )
-    # pooled_result_df = pooled_result_df.with_columns(
-    #     pl.col("S")
-    #     .str.split(",")
-    #     .list.filter(pl.element() != client_var_idx)
-    #     .list.join(","),
-    #     pl.col("ord") - 1,
-    # )
-    # pooled_result_df = replace_idx_with_varnames(pooled_result_df, pooled_result_labels)
-
-    # pooled_result_df = pl.from_pandas(pooled_result_df).sort("ord", "X", "Y", "S")
-    # print(pooled_result_df)
-
-    # dfs = [d.drop("CLIENT") for d in dfs]
     dfs = [
         d.select(labels[0]) if i % 2 == 0 else d.select(labels[1])
         for i, d in enumerate(dfs)
@@ -343,40 +339,21 @@ def test_dataset(df, labels):
     # for cdf in client_dfs:
     #     print(cdf.head(1))
 
-    """
-    *** Calculating p value for independence of B from E given ['A', 'C']
-    1 DOFs = 6 T1 DOFs - 5 T0 DOFs
-    0.1023 Test statistic = 2*(-503.0862 T1 LLF - -503.1373 T0 LLF)
-    p value = 0.749050
-    *** Calculating p value for independence of E from B given ['A', 'C']
-    1 DOFs = 6 T1 DOFs - 5 T0 DOFs
-    0.0007 Test statistic = 2*(-589.8479 T1 LLF - -589.8483 T0 LLF)
-    p value = 0.978209
-    *** Combining p values for symmetry of tests between B and E given {'A', 'C'}
-    p value B: 0.74905022713383
-    p value E: 0.9782086110881897
-    p value = 0.9782
-    """
-
     # server = fedci.Server(
     #     [fedci.Client(str(i), d) for i, d in enumerate(client_dfs, start=1)]
     # )
 
     server = fedci.Server([fedci.Client(str(i), d) for i, d in enumerate(dfs, start=1)])
 
-    # server.test("A", "B", [])
-    # server.test("A", "B", ["E"])
-    x = server.test("B", "E", ["A", "C"])
+    # x = server.test("B", "C", ["E"])
+    # x = server.test("A", "C", ["B", "E"])
+    x = server.test("A", "C", ["B", "E"])
     print(x)
     asd
+
+    # server.test("A", "B", ["E"])
+    # x = server.test("B", "E", ["A", "C"])
     # server.test("B", "E", ["A", "C", "CLIENT"])
-    """
-    Testing if X= 2 is indep of Y= 4 given S={ 1,3,5 }
-    Running Gaussian linear regression for  4
-    Running Gaussian linear regression for  2
-    p1: 0.7957257 and p2: 0.7957257
-    """
-    # asd
     fedci_results = server.run()
     t3 = time.time()
     fedci_all_labels = sorted(list(server.schema.keys()))
@@ -395,10 +372,18 @@ data_dir = "experiments/fixed_effect_data/sim"
 seed_start = 10031
 num_runs = 20
 SEEDS = range(seed_start, seed_start + num_runs)
-SEEDS = [10000]
-SAMPLES = [1000]
-CLIENTS = [8]
+SEEDS = [10018]  # 10001
+SAMPLES = [500]  # A B C,E 12 2500 || C D A,E 12 500
+CLIENTS = [12]
 # SAMPLES = [5000, 10000]
+
+"""
+╞═════╪═════╪═════╪════════╪═══════╪════════════╪═════════════╪═══════════════╪══════════════╪═══════════════════╪══════════════════╪═════════════╪════════════╡
+│ B   ┆ E   ┆ C   ┆ 61     ┆ 10023 ┆ 8          ┆ 1000        ┆ 0.552412      ┆ 0.0          ┆ -0.593462         ┆ -34.538776       ┆ -0.552412   ┆ -33.945315 │
+│ A   ┆ C   ┆ B,E ┆ 61     ┆ 10018 ┆ 12         ┆ 500         ┆ 0.119371      ┆ 4.0427e-92   ┆ -2.125517         ┆ -34.538776       ┆ -0.119371   ┆ -32.413259 │
+│ A   ┆ B   ┆ C   ┆ 61     ┆ 10023 ┆ 8          ┆ 1000        ┆ 0.113433      ┆ 0.0          ┆ -2.176541         ┆ -34.538776       ┆ -0.113433   ┆ -32.362236 │
+│ A   ┆ D   ┆ C,E ┆ 61     ┆ 10026 ┆ 4          ┆ 2500        ┆ 0.001568      ┆ 6.0740e-8    ┆ -6.458134         ┆ -16.616666       ┆ -0.001568   ┆ -10.158532
+"""
 
 pag_ids_to_test = [61]
 
@@ -408,6 +393,11 @@ POTENTIAL_VAR_LEVELS = [
     ("nominal", 4),
     ("ordinal", 4),
 ]
+
+"""
+
+A   ┆ C   ┆ B,E ┆ 61     ┆ 10003 ┆ 4          ┆ 1000        ┆ -0.465803
+"""
 
 from tqdm import tqdm
 
@@ -469,22 +459,12 @@ for seed in tqdm(SEEDS, position=0, leave=True):
                     df_msep, on=["ord", "X", "Y", "S"], how="left"
                 )
 
-                print(df_result)
+                print(df_result.drop(cs.contains("runtime")))
 
                 print(
-                    df_result.filter(pl.col("pooled_pvalue") > 0.05)
-                    .filter(pl.col("fedci_pvalue") < 0.05)
-                    .drop(cs.contains("runtime"))
-                )
-                print(
-                    df_result.filter((pl.col("X") == "A") & (pl.col("Y") == "B")).drop(
-                        cs.contains("runtime")
-                    )
-                )
-                print(
-                    df_result.filter((pl.col("X") == "B") & (pl.col("Y") == "E")).drop(
-                        cs.contains("runtime")
-                    )
+                    df_result.filter(
+                        (pl.col("pooled_pvalue") - pl.col("fedci_pvalue")).abs() > 0.1
+                    ).drop(cs.contains("runtime"))
                 )
                 asd
 
@@ -506,75 +486,23 @@ for seed in tqdm(SEEDS, position=0, leave=True):
                 )
 
 """
-┌─────┬─────┬─────┬─────┬───────────────┬───────────────┬──────────────┬───────┐
-│ ord ┆ X   ┆ Y   ┆ S   ┆ pooled_pvalue ┆ fisher_pvalue ┆ fedci_pvalue ┆ MSep  │
-│ --- ┆ --- ┆ --- ┆ --- ┆ ---           ┆ ---           ┆ ---          ┆ ---   │
-│ i32 ┆ str ┆ str ┆ str ┆ f64           ┆ f64           ┆ f64          ┆ bool  │
-╞═════╪═════╪═════╪═════╪═══════════════╪═══════════════╪══════════════╪═══════╡
-│ 0   ┆ B   ┆ C   ┆     ┆ 1.4921e-18    ┆ 1.6903e-16    ┆ 1.6152e-18   ┆ false │
-│ 0   ┆ B   ┆ E   ┆     ┆ 0.000005      ┆ 0.000031      ┆ 0.000006     ┆ false │
-│ 1   ┆ B   ┆ C   ┆ A   ┆ 1.9542e-19    ┆ 1.7232e-16    ┆ 1.8058e-19   ┆ false │
-│ 1   ┆ B   ┆ C   ┆ E   ┆ 5.8121e-14    ┆ 2.0783e-11    ┆ 4.1999e-14   ┆ false │
-│ 1   ┆ B   ┆ E   ┆ A   ┆ 0.000002      ┆ 0.000078      ┆ 0.000003     ┆ false │
-│ 1   ┆ B   ┆ E   ┆ C   ┆ 0.636446      ┆ 0.789648      ┆ 0.748509     ┆ true  │
-│ 2   ┆ B   ┆ C   ┆ A,E ┆ 1.6723e-14    ┆ 7.3965e-12    ┆ 1.0156e-14   ┆ false │
-│ 2   ┆ B   ┆ E   ┆ A,C ┆ 0.795726      ┆ 0.784342      ┆ 1.0          ┆ false │
-└─────┴─────┴─────┴─────┴───────────────┴───────────────┴──────────────┴───────┘
-
+┌─────┬─────┬─────┬────────┬───────┬────────────┬─────────────┬───────────┐
+│ X   ┆ Y   ┆ S   ┆ pag_id ┆ seed  ┆ partitions ┆ num_samples ┆ diff      │
+│ --- ┆ --- ┆ --- ┆ ---    ┆ ---   ┆ ---        ┆ ---         ┆ ---       │
+│ str ┆ str ┆ str ┆ i32    ┆ i32   ┆ i32        ┆ i32         ┆ f64       │
+╞═════╪═════╪═════╪════════╪═══════╪════════════╪═════════════╪═══════════╡
+│ A   ┆ C   ┆ B,E ┆ 61     ┆ 10003 ┆ 4          ┆ 1000        ┆ -0.465803 │
+│ A   ┆ C   ┆ D,E ┆ 61     ┆ 10008 ┆ 12         ┆ 1000        ┆ -0.131782 │
+│ A   ┆ E   ┆ D   ┆ 61     ┆ 10001 ┆ 12         ┆ 1000        ┆ -0.044453 │
+│ A   ┆ D   ┆ E   ┆ 61     ┆ 10001 ┆ 4          ┆ 1000        ┆ -0.034744 │
+│ A   ┆ B   ┆ C,E ┆ 61     ┆ 10007 ┆ 4          ┆ 1000        ┆ 0.05243   │
+│ A   ┆ B   ┆     ┆ 61     ┆ 10007 ┆ 4          ┆ 1000        ┆ 0.05487   │
+│ A   ┆ B   ┆ E   ┆ 61     ┆ 10007 ┆ 4          ┆ 1000        ┆ 0.057148  │
+│ A   ┆ E   ┆ B,C ┆ 61     ┆ 10003 ┆ 4          ┆ 1000        ┆ 0.057256  │
+│ A   ┆ B   ┆ C   ┆ 61     ┆ 10007 ┆ 4          ┆ 1000        ┆ 0.062084  │
+│ B   ┆ E   ┆ A,C ┆ 61     ┆ 10007 ┆ 4          ┆ 1000        ┆ 0.093737  │
+│ B   ┆ E   ┆ C   ┆ 61     ┆ 10007 ┆ 4          ┆ 1000        ┆ 0.09575   │
+│ B   ┆ E   ┆ A   ┆ 61     ┆ 10007 ┆ 4          ┆ 1000        ┆ 0.149566  │
+│ B   ┆ E   ┆     ┆ 61     ┆ 10007 ┆ 4          ┆ 1000        ┆ 0.15249   │
+└─────┴─────┴─────┴────────┴───────┴────────────┴─────────────┴───────────┘
 """
-
-
-"""
-Testing if X= 2 is indep of Y= 4 given S={ 1,3,5 }
-Running Gaussian linear regression for  4
-NULL
-NULL
-
-Call:
-stats::lm(formula = ydat ~ ., data = ds1)
-
-Coefficients:
-(Intercept)           AD           AC           AB            C      CLIENTH
-   -0.70954      0.23289      0.17440      0.09002     -0.32166      0.90287
-    CLIENTE      CLIENTG            B
-   -0.20988      0.63178      0.01377
-
-(Intercept)          AD          AC          AB           C     CLIENTH
--0.70953898  0.23289394  0.17439984  0.09001630 -0.32166481  0.90286650
-    CLIENTE     CLIENTG           B
--0.20988019  0.63177876  0.01377382
-'log Lik.' -591.9573 (df=10)
-Running Gaussian linear regression for  2
-NULL
-NULL
-
-Call:
-stats::lm(formula = ydat ~ ., data = ds1)
-
-Coefficients:
-(Intercept)           AD           AC           AB            C      CLIENTH
-   -0.63926      0.20083      0.16137      0.09671      0.16954      1.31050
-    CLIENTE      CLIENTG            E
-   -0.05621     -0.45582      0.00978
-
- (Intercept)           AD           AC           AB            C      CLIENTH
--0.639263454  0.200828536  0.161371322  0.096705874  0.169541976  1.310495488
-     CLIENTE      CLIENTG            E
--0.056214152 -0.455822680  0.009779785
-'log Lik.' -505.1458 (df=10)
-p1: 0.7957257 and p2: 0.7957257
-"""
-
-# IDDDD 2
-# -0.5178608374320692
-# IDDDD 4
-# 0.3850038494890933
-# IDDDD 6
-# -0.7277405892047836
-# IDDDD 8
-# 0.1139189085616599
-
-# C F D H A E B G
-
-# C D A B (A,C,D,E)
-# F H E G (A,B,C,E)
