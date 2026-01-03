@@ -18,15 +18,37 @@ pl.Config.set_tbl_rows(40)
 
 image_folder = "images/fixed_effect_images"
 
-folder = "experiments/fixed_effect_data/sim"
+# folder = "experiments/fixed_effect_data/sim"
+folder = "experiments/fixed_effect_data/sim2"
 # folder = "experiments/fixed_effect_data/SLIDES_MIXED"
 
 
 alpha = 0.05
 df_base = pl.read_parquet(f"{folder}/*.parquet")
 
+####
+# FILTER OUT ALL IMPOSSIBLE TESTS (are auto filtered in updated code, but this supports old files)
+df_base = df_base.with_columns(
+    non_global_vars=pl.col("vars1").list.set_symmetric_difference(pl.col("vars2"))
+)
+df_base = df_base.filter(
+    (
+        pl.col("S").str.replace_all(
+            ",",
+            "",
+        )
+        + pl.col("X")
+        + pl.col("Y")
+    )
+    .str.split("")
+    .list.set_intersection(pl.col("non_global_vars"))
+    .list.len()
+    < 2
+)
+####
+
 print("== Perc of nulls in pooled")
-print(df_base.select(pl.col("pooled_pvalue").null_count() / len(df_base)))
+print(df_base.select(cs.contains("pvalue").null_count() / len(df_base)))
 
 df_base = df_base.filter(pl.col("pooled_pvalue").is_not_null())
 
@@ -41,7 +63,26 @@ df_base = df_base.with_columns(
     )
 )
 
-df_base = df_base.filter(pl.col("max_norm") < 1000)
+# df_base = df_base.filter(pl.col("max_norm") < 1000)
+
+
+# df_base = df_base.filter(pl.col("fedci_pvalue").is_null())
+# df_base = df_base.with_columns(
+#     filename=pl.format(
+#         "experiments/fixed_effect_data/sim2/{}-id{}-s{}-c{}.parquet",
+#         pl.col("seed"),
+#         pl.col("pag_id"),
+#         pl.col("num_samples"),
+#         pl.col("partitions"),
+#     )
+# )
+# import os
+
+# print(df_base.select("filename", "pag_id", "seed", "partitions", "num_samples"))
+# for row in df_base.unique(subset=["filename"]).rows(named=True):
+#     fname = row["filename"]
+#     os.remove(fname)
+# asd
 
 # df_base = df_base.filter(pl.col("seed") != 10011)
 
@@ -753,6 +794,66 @@ def show_fedci_pooled_diff(df_base, log=True):
             "diff_log",
         ).sort("diff_log")
     )
+    print(
+        pl.concat(
+            [
+                df.select(
+                    "X",
+                    "Y",
+                    "S",
+                    "pag_id",
+                    "seed",
+                    "partitions",
+                    "num_samples",
+                    "pooled_pvalue",
+                    "fedci_pvalue",
+                    "pooled_pvalue_log",
+                    "fedci_pvalue_log",
+                    "diff",
+                    "diff_log",
+                )
+                .sort("diff_log")
+                .head(2),
+                df.select(
+                    "X",
+                    "Y",
+                    "S",
+                    "pag_id",
+                    "seed",
+                    "partitions",
+                    "num_samples",
+                    "pooled_pvalue",
+                    "fedci_pvalue",
+                    "pooled_pvalue_log",
+                    "fedci_pvalue_log",
+                    "diff",
+                    "diff_log",
+                )
+                .sort("diff_log")
+                .tail(2),
+            ]
+        )
+    )
+    # print("-- Bad fits test")
+    # print(
+    #     df.filter(pl.col("fedci_bad_fit"))
+    #     .select(
+    #         "X",
+    #         "Y",
+    #         "S",
+    #         "pag_id",
+    #         "seed",
+    #         "partitions",
+    #         "num_samples",
+    #         "pooled_pvalue",
+    #         "fedci_pvalue",
+    #         "pooled_pvalue_log",
+    #         "fedci_pvalue_log",
+    #         "diff",
+    #         "diff_log",
+    #     )
+    #     .sort("diff_log")
+    # )
 
 
 def show_deviation_from_pooled(df_base):
@@ -761,7 +862,7 @@ def show_deviation_from_pooled(df_base):
 
     df = df.drop_nulls()
 
-    df = df.with_columns(cs.contains("pvalue").log())
+    df = df.with_columns(cs.contains("pvalue").clip(pl.lit(1e-15), None).log())
 
     df = df.with_columns(
         fisher_pvalue_diff=pl.col("fisher_pvalue") - pl.col("pooled_pvalue"),
@@ -770,6 +871,22 @@ def show_deviation_from_pooled(df_base):
 
     print(
         df.select(
+            pl.col("fisher_pvalue_diff", "fedci_pvalue_diff")
+            .mean()
+            .name.suffix("_mean"),
+            pl.col("fisher_pvalue_diff", "fedci_pvalue_diff").std().name.suffix("_std"),
+        )
+    )
+
+    print(
+        df.select(
+            pl.col("fisher_pvalue_diff", "fedci_pvalue_diff").min().name.suffix("_min"),
+            pl.col("fisher_pvalue_diff", "fedci_pvalue_diff").max().name.suffix("_max"),
+        )
+    )
+
+    print(
+        df.group_by("MSep").agg(
             pl.col("fisher_pvalue_diff", "fedci_pvalue_diff")
             .mean()
             .name.suffix("_mean"),

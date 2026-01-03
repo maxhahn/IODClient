@@ -182,7 +182,11 @@ class RegressionTest:
         beta = self._get_new_beta(xwx, xwz)
         # TODO: improve with variables
         # if alpha <1e-8 und update wird trotzdem gemacht: break, test ende
-        if self.iterations > 2 and np.linalg.norm(self.beta - beta) < 1e-5:
+        if (
+            self.iterations == 0
+            and np.linalg.norm(self.beta - beta) < 1e-4
+            or np.linalg.norm(self.beta - beta) < 1e-7
+        ):
             self.early_stop = True
             return
         self.beta = beta
