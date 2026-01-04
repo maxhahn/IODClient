@@ -50,7 +50,25 @@ df_base = df_base.filter(
 print("== Perc of nulls in pooled")
 print(df_base.select(cs.contains("pvalue").null_count() / len(df_base)))
 
-df_base = df_base.filter(pl.col("pooled_pvalue").is_not_null())
+
+df_sample_errors = (
+    df_base.filter(
+        pl.col("pooled_pvalue")
+        .is_null()
+        .any()
+        .over("pag_id", "seed", "num_samples", "partitions")
+    )
+    .select("pag_id", "seed", "num_samples", "partitions")
+    .unique()
+)
+print("== SAMPLE ERRORS ==")
+print(df_sample_errors)
+
+# df_base = df_base.filter(pl.col("pooled_pvalue").is_not_null())
+
+df_base = df_base.join(
+    df_sample_errors, on=["pag_id", "seed", "num_samples", "partitions"], how="anti"
+)
 
 df_base = df_base.with_columns(
     max_norm=pl.max_horizontal(
