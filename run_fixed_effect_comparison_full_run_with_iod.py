@@ -1,7 +1,7 @@
-import itertools
 import os
 import random
 import time
+from collections import OrderedDict
 
 import numpy as np
 import pandas as pd
@@ -17,6 +17,12 @@ from rpy2.robjects import numpy2ri, pandas2ri
 
 import fedci
 
+ALPHA = 0.05
+COEF_THRESHOLD = 0.2  # 0.1
+
+pag_msep_location = "pag_msep/pag-{}.parquet"
+# pag_msep_location = "experiments/pag_msep/pag-{}.parquet"
+
 cb.consolewrite_print = lambda x: None
 cb.consolewrite_warnerror = lambda x: None
 
@@ -26,7 +32,7 @@ get_data_for_single_pag_f = ro.globalenv["get_data_for_single_pag"]
 run_ci_test_f = ro.globalenv["run_ci_test"]
 msep_f = ro.globalenv["msep"]
 load_pags = ro.globalenv["load_pags"]
-
+iod_on_ci_data_f = ro.globalenv["iod_on_ci_data"]
 
 test_pags, label_splits = load_pags()
 label_splits = [(sorted(tuple(x[0])), sorted(tuple(x[1]))) for x in label_splits]
@@ -112,16 +118,16 @@ def is_m_separable(pag, labels, non_sharable_vars=None):
                     "ord": len(s),
                     "X": x,
                     "Y": y,
-                    "S": sorted(list(s)),
+                    "S": ",".join(sorted(list(s))),
                     "MSep": bool(is_msep[0]),
                 }
                 result.append(r)
                 # print(x,y,s, bool(is_msep[0]))
     df = pl.from_dicts(result)
+    df = df.sort("ord", "X", "Y", "S").with_columns(pl.col("ord").cast(pl.Int32))
     return df
 
 
-pag_msep_location = "pag_msep/pag-{}.parquet"
 if not os.path.exists(pag_msep_location.rpartition("/")[0]):
     os.makedirs(pag_msep_location.rpartition("/")[0])
 
@@ -145,9 +151,6 @@ df_msep_mapping = {
     )
     for i in three_tail_pags
 }
-
-ALPHA = 0.05
-COEF_THRESHOLD = 0.2  # 0.1
 
 
 def get_data(pag, num_samples, var_types, var_levels, seed):
@@ -273,6 +276,20 @@ def replace_idx_with_varnames(df, labels):
     df = df.with_columns(
         pl.col("X").cast(pl.Utf8).replace(mapping),
         pl.col("Y").cast(pl.Utf8).replace(mapping),
+        pl.col("S")
+        .str.split(",")
+        .list.eval(pl.element().replace(mapping))
+        .list.sort()
+        .list.join(","),
+    )
+    return df
+
+
+def replace_varnames_with_idx(df, labels):
+    mapping = {l: str(i) for i, l in enumerate(labels, start=1)}
+    df = df.with_columns(
+        pl.col("X").replace(mapping).cast(pl.Int32),
+        pl.col("Y").replace(mapping).cast(pl.Int32),
         pl.col("S")
         .str.split(",")
         .list.eval(pl.element().replace(mapping))
@@ -437,11 +454,12 @@ def test_dataset(df, labels):
 
 
 def run_riod(df, labels, client_labels, alpha=0.05, procedure="original"):
+    df = df.to_pandas()
     # let index start with 1
     df.index += 1
 
     label_list = [ro.StrVector(v) for v in client_labels.values()]
-    users = list(client_labels.keys())
+    # users = list(client_labels.keys())
 
     with (ro.default_converter + pandas2ri.converter + numpy2ri.converter).context():
         suff_stat = [
@@ -451,39 +469,75 @@ def run_riod(df, labels, client_labels, alpha=0.05, procedure="original"):
         suff_stat = OrderedDict(suff_stat)
         suff_stat = ro.ListVector(suff_stat)
 
-        result = iod_on_ci_data_f(label_list, suff_stat, alpha, procedure)
+        result = iod_on_ci_data_f(label_list, suff_stat, alpha)
+
+        # print(result["G_PAG_List"])
 
         g_pag_list = [x[1].tolist() for x in result["G_PAG_List"].items()]
         g_pag_labels = [
             list([str(a) for a in x[1]]) for x in result["G_PAG_Label_List"].items()
         ]
         g_pag_list = [np.array(pag).astype(int).tolist() for pag in g_pag_list]
-        gi_pag_list = [x[1].tolist() for x in result["Gi_PAG_list"].items()]
-        gi_pag_labels = [
-            list([str(a) for a in x[1]]) for x in result["Gi_PAG_Label_List"].items()
-        ]
-        gi_pag_list = [np.array(pag).astype(int).tolist() for pag in gi_pag_list]
 
-        found_correct_pag = bool(result["found_correct_pag"][0])
+    return g_pag_list, g_pag_labels
 
-        g_pag_shd = [x[1][0].item() for x in result["G_PAG_SHD"].items()]
-        g_pag_for = [x[1][0].item() for x in result["G_PAG_FOR"].items()]
-        g_pag_fdr = [x[1][0].item() for x in result["G_PAG_FDR"].items()]
 
-    return (
-        g_pag_list,
-        g_pag_labels,
-        gi_pag_list,
-        gi_pag_labels,
+def orcale_test_iod(df_msep, label_split):
+    labels = sorted(list(set(label_split[0] + label_split[1])))
+    client_labels = {i: l for i, l in enumerate(label_split)}
+    df_msep = (
+        replace_varnames_with_idx(df_msep, labels)
+        .sort("ord", "X", "Y", "S")
+        .with_columns(pl.col("ord").cast(pl.Int32))
+    )
+    df_msep = df_msep.with_columns(
+        pvalue=pl.when(pl.col("MSep")).then(pl.lit(1.0)).otherwise(pl.lit(0.0))
+    ).drop("MSep")
+    oracle_result_og = run_riod(
+        df_msep, labels, client_labels, alpha=ALPHA, procedure="original"
+    )
+    # oracle_result_ot = run_riod(
+    #     df_msep, labels, client_labels, alpha=ALPHA, procedure="orderedtriplets"
+    # )
+    oracle_result_ot = None
+    return oracle_result_og, oracle_result_ot
+
+
+def run_iod(df, label_split):
+    labels = sorted(list(set(label_split[0] + label_split[1])))
+    df = (
+        replace_varnames_with_idx(df, labels)
+        .sort("ord", "X", "Y", "S")
+        .with_columns(pl.col("ord").cast(pl.Int32))
     )
 
+    client_labels = {i: l for i, l in enumerate(label_split)}
+    result_og = run_riod(df, labels, client_labels, alpha=ALPHA, procedure="original")
+    # result_ot = run_riod(
+    #     df, labels, client_labels, alpha=ALPHA, procedure="orderedtriplets"
+    # )
+    result_ot = None
+    return result_og, result_ot
 
-def orcale_test_iod(df_msep, vars, non_shared_vars):
-    pass
+
+def get_min_shd(test_result, oracle_result):
+    test_pags, test_labels = test_result
+    oracle_pags, oracle_labels = oracle_result
+
+    shds = []
+    for pred_pag, _labels in zip(test_pags, test_labels):
+        min_shd = 99
+        for oracle_pag, _oracle_labels in zip(oracle_pags, oracle_labels):
+            perm = [_oracle_labels.index(col) for col in _labels]
+            pred_pag = np.array(pred_pag)[:, perm][perm, :]
+            shd = np.sum(pred_pag != np.array(oracle_pag)).item()
+            if shd < min_shd:
+                min_shd = shd
+        shds.append(min_shd)
+    return shds
 
 
-data_dir = "experiments/fixed_effect_data/sim2"
-
+data_dir = "experiments/fixed_effect_data/sim"
 
 # seed = random.randint(0, 100000)
 seed_start = 10000
@@ -505,7 +559,8 @@ CLIENTS = [4, 8, 12]
 #     )
 # pag_ids_to_test = pag_ids_to_test_no_slides_pag_batched[1]
 pag_ids_to_test = three_tail_pags
-pag_ids_to_test = [18, 61, 1]
+# pag_ids_to_test = [18, 61, 1]
+pag_ids_to_test = [61]
 
 # print(pag_ids_to_test)
 # asd
@@ -524,8 +579,7 @@ for pag_id in tqdm(pag_ids_to_test, position=0, leave=True):
 
     df_msep = df_msep_mapping[pag_id]
 
-    print(df_msep)
-    asd
+    oracle_result_og, oracle_result_ot = orcale_test_iod(df_msep, label_split)
 
     fixed_effect_pag = np.zeros((base_pag.shape[0] + 1, base_pag.shape[1] + 1))
     fixed_effect_pag[:-1, :-1] = base_pag
@@ -574,14 +628,44 @@ for pag_id in tqdm(pag_ids_to_test, position=0, leave=True):
                     test_dataset(df, label_split)
                 )
 
+                # CALCULATE SHD
+                _df_pooled, _df_fisher, _df_fedci = df_pooled, df_fisher, df_fedci
+                _df_pooled = _df_pooled.select(
+                    "ord", "X", "Y", "S", "pvalue"
+                ).drop_nulls()
+                _df_fisher = _df_fisher.select(
+                    "ord", "X", "Y", "S", "pvalue"
+                ).drop_nulls()
+                _df_fedci = _df_fedci.select(
+                    "ord", "X", "Y", "S", "pvalue"
+                ).drop_nulls()
+
+                pooled_result_og, pooled_result_ot = run_iod(_df_pooled, label_split)
+                fisher_result_og, fisher_result_ot = run_iod(_df_fisher, label_split)
+                fedci_result_og, fedci_result_ot = run_iod(_df_fedci, label_split)
+
+                pooled_pag_list_og, pooled_pag_labels_og = pooled_result_og
+                # pooled_pag_list_ot, pooled_pag_labels_ot = pooled_result_ot
+                fisher_pag_list_og, fisher_pag_labels_og = fisher_result_og
+                # fisher_pag_list_ot, fisher_pag_labels_ot = fisher_result_ot
+                fedci_pag_list_og, fedci_pag_labels_og = fedci_result_og
+                # fedci_pag_list_ot, fedci_pag_labels_ot = fedci_result_ot
+
+                pooled_shds_og = get_min_shd(pooled_result_og, oracle_result_og)
+                # pooled_shds_ot = get_min_shd(pooled_result_ot, oracle_result_ot)
+                fisher_shds_og = get_min_shd(fisher_result_og, oracle_result_og)
+                # fisher_shds_ot = get_min_shd(fisher_result_ot, oracle_result_ot)
+                fedci_shds_og = get_min_shd(fedci_result_og, oracle_result_og)
+                # fedci_shds_ot = get_min_shd(fedci_result_ot, oracle_result_ot)
+
                 df_pooled = df_pooled.rename({"pvalue": "pooled_pvalue"}).with_columns(
-                    pooled_runtime=pl.lit(time_pooled)
+                    pooled_runtime=pl.lit(time_pooled), pooled_shds_og=pooled_shds_og
                 )
                 df_fisher = df_fisher.rename({"pvalue": "fisher_pvalue"}).with_columns(
-                    fisher_runtime=pl.lit(time_fisher)
+                    fisher_runtime=pl.lit(time_fisher), fisher_shds_og=fisher_shds_og
                 )
                 df_fedci = df_fedci.rename({"pvalue": "fedci_pvalue"}).with_columns(
-                    fedci_runtime=pl.lit(time_fedci)
+                    fedci_runtime=pl.lit(time_fedci), fedci_shds_og=fedci_shds_og
                 )
 
                 df_result = df_fedci.join(

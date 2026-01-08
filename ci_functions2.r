@@ -318,63 +318,28 @@ aggregate_ci_results <- function(true_pag_amat, true_pag_cols, labelList_, ci_da
     iod_out
 }
 
-iod_on_ci_data <- function(true_pag_amat, true_pag_cols, labelList_, suffStat, alpha, procedure) {
+iod_on_ci_data <- function(labelList_, suffStat, alpha, procedure="original") {
+
     labelList <<- labelList_
 
-    colnames(true_pag_amat) <- true_pag_cols
-    rownames(true_pag_amat) <- colnames(true_pag_amat)
-
     suffStat$labelList <- labelList
-    iod_out <- IOD(labelList, suffStat, alpha, procedure=procedure)
+    iod_out <- IOD(labelList, suffStat, alpha, procedure)
 
     index <- 1
     iod_out$G_PAG_Label_List <- list()
-    iod_out$G_PAG_SHD <- list()
-    iod_out$G_PAG_FDR <- list()
-    iod_out$G_PAG_FOR <- list()
-
+    #print(iod_out$G_PAG_List)
     for (gpag in iod_out$G_PAG_List) {
       iod_out$G_PAG_Label_List[[index]] <- colnames(gpag)
-
-      posneg_metrics <- getPAGPosNegMetrics(true_pag_amat, gpag)
-      iod_out$G_PAG_SHD[[index]] <- shd_PAG(true_pag_amat, gpag)
-      iod_out$G_PAG_FDR[[index]] <- posneg_metrics$false_discovery_rate
-      iod_out$G_PAG_FOR[[index]] <- posneg_metrics$false_omission_rate
-
       index <- index + 1
     }
 
     index <- 1
     iod_out$Gi_PAG_Label_List <- list()
-    for (gipag in iod_out$Gi_PAG_List) {
+    for (gipag in iod_out$Gi_PAG_list) {
       iod_out$Gi_PAG_Label_List[[index]] <- colnames(gipag)
       index <- index + 1
     }
 
-    #print(true_pag_amat)
-    #print(iod_out$G_PAG_List)
-
-    is_in_list <- FALSE
-    col_order = colnames(true_pag_amat)
-    for (adj_matrix in iod_out$G_PAG_List) {
-    #make sure that trueAdjM and theadj_matrix have the same sequence of vars
-    #new_order <- colnames(adj_matrix)
-    adj_matrix = adj_matrix[col_order, col_order]
-    #trueAdjM <- trueAdjM[new_order, new_order]
-    #print(true_pag_amat)
-    #print(adj_matrix)
-    #print('---')
-    if (all(adj_matrix == true_pag_amat)) {
-        is_in_list <- TRUE
-        break
-      }
-    }
-
-    iod_out$found_correct_pag = is_in_list
-
-    #iod_out$found_correct_pag = containsTheTrueGraph(trueAdjM = true_pag_amat, iod_out$G_PAG_List)
-
-    #print(iod_out$found_correct_pag)
     iod_out
 }
 
