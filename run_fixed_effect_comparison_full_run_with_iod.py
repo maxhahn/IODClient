@@ -558,9 +558,9 @@ CLIENTS = [4, 8, 12]
 #         pag_ids_to_test_no_slides_pag[i : i + bs]
 #     )
 # pag_ids_to_test = pag_ids_to_test_no_slides_pag_batched[1]
-pag_ids_to_test = three_tail_pags
+pag_ids_to_test = sorted(three_tail_pags)[::-1]
 # pag_ids_to_test = [18, 61, 1]
-pag_ids_to_test = [61]
+# pag_ids_to_test = [61]
 
 # print(pag_ids_to_test)
 # asd
