@@ -4,8 +4,6 @@ pscl
 dagitty
 DOT
 rsvg
-BFF
-BiocManager
 graph
 RGBL
 Rgraphviz
