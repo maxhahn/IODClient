@@ -30,13 +30,19 @@ RUN apt-get update && apt-get install -y \
 RUN R -e "install.packages(c('BiocManager', 'devtools'), repos='http://cran.rstudio.com/')"
 
 # Install Bioconductor packages
-RUN R -e "BiocManager::install(c('graph', 'Rgraphviz', 'RBGL'), ask=FALSE)"
+RUN R -e "BiocManager::install(c('graph', 'Rgraphviz', 'RBGL', 'BFF'), ask=FALSE)"
 
 # Install base dependencies first
 RUN R -e "\
     install.packages(c('ggm', 'sfsmisc', 'gmp', 'abind', 'corpcor', 'Rmpfr', 'V8'), \
     repos='http://cran.rstudio.com/', \
     dependencies=TRUE)"
+
+# Install BFF and its dependencies explicitly
+#RUN R -e "\
+#    install.packages('BFF', \
+#    repos='http://cran.rstudio.com/', \
+#    dependencies=TRUE)"
 
 # Install pcalg and its dependencies
 RUN R -e "\
