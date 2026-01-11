@@ -7,12 +7,13 @@ import statsmodels.api as sm
 import statsmodels.genmod.families.family as fam
 from scipy.special import softmax
 
-from .env import ADDITIVE_MASKING, CLIENT_HETEROGENIETY, FIT_INTERCEPT, LR
+from .env import get_env_additive_masking, get_env_client_heterogeniety, get_env_fit_intercept
 from .utils import (
     BetaUpdateData,
     VariableType,
     categorical_separator,
     constant_colname,
+    client_colname,
     ordinal_separator,
     polars_dtype_map,
 )
@@ -98,7 +99,7 @@ class ComputationHelper:
         family: DistributionalFamily,
     ):
         eta = np.zeros_like(y)
-        if CLIENT_HETEROGENIETY:
+        if get_env_client_heterogeniety()==1:
             gamma = ComputationHelper.fit_local_gamma(y=y, offset=eta, family=family)
             eta += gamma
         mu: np.ndarray = family.inverse_link(eta)
@@ -127,7 +128,7 @@ class ComputationHelper:
         family: DistributionalFamily,
     ):
         eta = np.zeros_like(y)
-        if CLIENT_HETEROGENIETY:
+        if get_env_client_heterogeniety()==1:
             gamma = ComputationHelper.fit_local_gamma(y=y, offset=eta, family=family)
             eta += gamma
         else:
@@ -145,7 +146,7 @@ class ComputationHelper:
     ):
         eta: np.ndarray = X @ beta
 
-        if CLIENT_HETEROGENIETY:
+        if get_env_client_heterogeniety()==1:
             gamma = ComputationHelper.fit_local_gamma(y=y, offset=eta, family=family)
         else:
             gamma = np.zeros_like(eta)
@@ -168,12 +169,11 @@ class ComputationHelper:
         var_y = np.clip(var_y, 1e-10, None)
 
         W = np.diag(((dmu_deta**2) / var_y).reshape(-1))
-        z: np.ndarray = (eta - gamma) + LR * (y - mu) / dmu_deta
+        z: np.ndarray = (eta - gamma) + (y - mu) / dmu_deta
         # z: np.ndarray = eta + (y - mu) / dmu_deta
 
         xw = X.T @ W
         xwx = xw @ X
-        # xwx *= LR
         xwz = xw @ z
         return xwx, xwz
 
@@ -539,7 +539,7 @@ class ComputationHelper:
                     hessian[j, k] = val
 
             # Small ridge for numerical stability (does NOT bias meaningfully)
-            hessian += 1e-6 * np.eye(Kp)
+            hessian += 10 * np.eye(Kp)
 
             # --------------------------------------------------
             # 6. Fisher scoring update
@@ -565,7 +565,7 @@ def get_data(
     data: pl.DataFrame, response: str | List[str], predictors: List[str]
 ) -> Tuple[np.ndarray, np.ndarray]:
     if len(predictors) > 0:
-        if FIT_INTERCEPT:
+        if get_env_fit_intercept():
             assert predictors[-1] == constant_colname, (
                 "Constant column is not last predictor"
             )
@@ -641,11 +641,7 @@ class CategoricalComputationUnit(ComputationUnit):
             if c.startswith(f"{response}{categorical_separator}")
         ]
         response_dummy_columns = sorted(response_dummy_columns)
-
         y_full, X = get_data(data, response_dummy_columns, predictors)
-
-        # X = np.vstack([X, np.zeros((y_full.shape[1], X.shape[1]))])
-        # y_full = np.vstack([y_full, np.eye(y_full.shape[1])])
 
         y = y_full[:, 1:]
 
@@ -656,7 +652,7 @@ class CategoricalComputationUnit(ComputationUnit):
             # Reshape beta (K x (J-1))
             beta = beta.reshape(num_features, -1, order="F")
 
-        if CLIENT_HETEROGENIETY:
+        if get_env_client_heterogeniety()==1:
             if X is None:
                 offset = np.zeros_like(y)
             else:
@@ -667,6 +663,7 @@ class CategoricalComputationUnit(ComputationUnit):
             #     print(response, "~", predictors)
             # print(gamma)
             gamma = np.tile(np.array(gamma), (y.shape[0], 1))
+
         else:
             gamma = np.zeros_like(y)
 
@@ -691,7 +688,7 @@ class CategoricalComputationUnit(ComputationUnit):
             return {"llf": llf, "xwx": xwx, "xwz": xwz, "rss": 0, "n": 0}
 
         # Compute eta and mu
-        eta = np.clip(X @ beta, -350, 350)  # N x (J-1)
+        eta = X @ beta  # N x (J-1)
         mu = np.clip(
             softmax(np.column_stack([np.zeros(y.shape[0]), eta + gamma]), axis=1),
             1e-8,
@@ -718,9 +715,8 @@ class CategoricalComputationUnit(ComputationUnit):
             except np.linalg.LinAlgError:
                 var_i_inv = np.linalg.pinv(var_i)
 
-            # z_i = (eta[i] - gamma[i]) + var_i_inv @ (y_i - p_i)  # (J-1)
             # because gamma is only added to mu and not to eta, gamma does not need to be subtracted from eta here
-            z_i = (eta[i]) + LR * var_i_inv @ (y_i - p_i)  # (J-1)
+            z_i = (eta[i]) + var_i_inv @ (y_i - p_i)  # (J-1)
 
             # Compute local contributions to XWX and XWz
             Xi = np.kron(np.eye(num_categories - 1), X[i : i + 1])  # (J-1) x (J-1)*K
@@ -728,10 +724,12 @@ class CategoricalComputationUnit(ComputationUnit):
             XWX += Xi.T @ Wi @ Xi
             XWz += Xi.T @ Wi @ z_i
 
-        # XWX *= LR
-
+        # print('TEST')
+        # print(XWX)
+        # print(XWz)
+        # asd
         # Compute log-likelihood
-        logprob = np.log(np.clip(mu, 1e-8, 1))
+        logprob = np.log(np.clip(mu, 1e-8, 1-1e-8))
         llf = np.sum(y_full * logprob)
 
         # print(np.linalg.norm(XWz.reshape(-1), 2))
@@ -887,6 +885,10 @@ class Client:
         self._network_fetch_function = _network_fetch_function
         self.id = id
         self.data: pl.DataFrame = data
+
+        if get_env_client_heterogeniety()==2:
+            self.data = self.data.with_columns(pl.lit(str(self.id)).alias(client_colname))
+
         self.schema: Dict[str, VariableType] = {
             column: polars_dtype_map[dtype]
             for column, dtype in dict(self.data.schema).items()
@@ -1063,7 +1065,7 @@ class Client:
         }
 
     def apply_masks(self, test_key, irls_step_result):
-        if not ADDITIVE_MASKING:
+        if not get_env_additive_masking():
             return irls_step_result
         assert (
             len(self.response_masking[test_key])
@@ -1120,7 +1122,7 @@ class Client:
                 else:
                     new_cond_vars.append(cond_var)
             new_cond_vars = sorted(new_cond_vars)
-            if FIT_INTERCEPT:
+            if get_env_fit_intercept():
                 new_cond_vars.append(constant_colname)
             cond_vars = new_cond_vars
             result = regression_computation_map[self.schema[resp_var]].compute(

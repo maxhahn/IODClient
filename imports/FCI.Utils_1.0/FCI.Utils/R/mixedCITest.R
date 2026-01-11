@@ -595,6 +595,7 @@ mixedCITest <- function(x, y, S, suffStat) {
       minp <- min(p1, p2, na.rm = T)
       maxp <- max(p1, p2, na.rm = T)
       p <- min(2* minp, maxp, na.rm=T)
+      ret$p <- p
     }
     if (!is.na(p) && !is.na(p2) && p == p2) {
       ret = ret2
@@ -745,6 +746,9 @@ getAllCITestResults <- function(dat, indepTest, suffStat, m.max=Inf,
                                     S <- getSepVector(todo_citestResults[i, "S"])
                                     SxyStr <- getSepString(S)
                                     pvalue <- indepTest(x, y, S, suffStat = suffStat)
+                                    p1 <- pvalue$ret1$p
+                                    p2 <- pvalue$ret2$p
+                                    pvalue = pvalue$ret$p
                                     if (computeProbs) {
                                       probs <- pvalue2probs(pvalue, n=n, eff_size=eff_size)
                                       pH0 <- probs$pH0
@@ -753,7 +757,7 @@ getAllCITestResults <- function(dat, indepTest, suffStat, m.max=Inf,
                                                         pvalue = pvalue, pH0=pH0, pH1=pH1)
                                     } else {
                                       ret <- data.frame(ord=ord, X=x, Y=y, S=SxyStr,
-                                                        pvalue = pvalue)
+                                                        pvalue = pvalue, p1 = p1, p2 = p2)
                                     }
                                     if (saveFiles) {
                                       write.table(ret, file=csv_citestResults_file, sep=",", row.names = FALSE,
@@ -1019,7 +1023,7 @@ getMixedCISuffStat <- function(dat, vars_names, covs_names=c(), verbose=FALSE) {
                    covs=covs_df,
                    rand_varnames = c(), # for simpl
                    n = dim(vars_df)[1],
-                   retall = FALSE,
+                   retall = TRUE,
                    symmetric = TRUE,
                    comb_p_method = "tsagris18",
                    packages_list = c(), # change to packages list required for parallelization

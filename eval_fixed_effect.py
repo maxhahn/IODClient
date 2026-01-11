@@ -6,6 +6,8 @@ from holoviews import opts
 hvplot.extension("matplotlib")
 hv.extension("matplotlib")
 
+import glob
+
 import matplotlib.pyplot as plt
 import polars as pl
 import polars.selectors as cs
@@ -19,12 +21,18 @@ pl.Config.set_tbl_rows(40)
 image_folder = "images/fixed_effect_images"
 
 # folder = "experiments/fixed_effect_data/sim"
-folder = "experiments/fixed_effect_data/sim2"
+folder = "experiments/fixed_effect_data/sim"
 # folder = "experiments/fixed_effect_data/SLIDES_MIXED"
 
-
 alpha = 0.05
-df_base = pl.read_parquet(f"{folder}/*.parquet")
+
+dfs = []
+for file in glob.glob(f"{folder}/*.parquet"):
+    df = pl.read_parquet(file)
+    dfs.append(df)
+#df_base = pl.read_parquet(f"{folder}/*.parquet")
+
+df_base = pl.concat(dfs, how='vertical_relaxed')
 
 ####
 # FILTER OUT ALL IMPOSSIBLE TESTS (are auto filtered in updated code, but this supports old files)
@@ -1054,6 +1062,13 @@ def show_deviation_from_pooled(df_base):
         )
 
 
+def pval_diffs(df_base):
+    df = df_base
+
+
+    df = df.with_columns(pval_diff_to_local=pl.col('pooled_pvalue')-pl.col('fedci_pvalue'))
+    print(df.sort('pval_diff_to_local').select('seed', 'pag_id', 'num_samples', 'partitions', 'X','Y','S', cs.contains('pvalue')))
+
 show_null_counts_in_pvalues(df_base)
 show_correlation_to_msep(df_base)
 show_msep_agreement(df_base)
@@ -1067,3 +1082,4 @@ show_incorrect_in_perc_based_on_indep_by_partition(df_base)
 # show_fisher_v_fedci_disagreement(df_base)
 show_deviation_from_pooled(df_base)
 show_fedci_pooled_diff(df_base)
+pval_diffs(df_base)

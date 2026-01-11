@@ -31,6 +31,7 @@ polars_dtype_map = {
 categorical_separator = "__cat__"
 ordinal_separator = "__ord__"
 constant_colname = "__const"
+client_colname = "__client"
 
 import numpy as np
 

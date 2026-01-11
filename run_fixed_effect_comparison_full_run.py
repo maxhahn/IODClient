@@ -194,10 +194,15 @@ def server_results_to_dataframe(labels, results):
         lrt1_restricted = sorted_betas[2]
         lrt1_unrestricted = sorted_betas[3]
 
-        s_labels_string = ",".join(sorted(test.conditioning_set))
+
+        cond_set = test.conditioning_set
+
+        cond_set = sorted(list(set(cond_set) - {'__client'}))
+
+        s_labels_string = ",".join(cond_set)
         rows.append(
             (
-                len(test.conditioning_set),
+                len(cond_set),
                 test.v0,
                 test.v1,
                 s_labels_string,
@@ -379,7 +384,7 @@ def test_dataset(df, labels):
     return pooled_result_df, fisher_df, fedci_df, t1 - t0, t2 - t1, t3 - t2
 
 
-data_dir = "experiments/fixed_effect_data/sim2"
+data_dir = "experiments/fixed_effect_data/sim3"
 
 
 # seed = random.randint(0, 100000)

@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Set, Tuple
 import numpy as np
 import scipy
 
-from .env import DEBUG, FIT_INTERCEPT, LINE_SEARCH, LM_DAMPING, RIDGE
+from .env import get_env_debug, get_env_fit_intercept, get_env_line_search, get_env_lm_damping, get_env_ridge
 from .utils import BetaUpdateData, VariableType
 
 
@@ -50,7 +50,7 @@ class RegressionTest:
             self.iterations,
         )
         predictors = sorted(list(predictors))
-        if FIT_INTERCEPT:
+        if get_env_fit_intercept():
             predictors.append("1")
         return f"RegressionTest {response} ~ {', '.join(predictors)} - iteration {iteration}/{self.max_iterations}{' - not finished' if not self.is_finished() else ''}"
 
@@ -83,15 +83,15 @@ class RegressionTest:
 
     def _get_new_beta(self, xwx, xwz):
         k = xwx.shape[0]
-        if RIDGE > 0:
-            if FIT_INTERCEPT:
+        if get_env_ridge() > 0:
+            if get_env_fit_intercept():
                 penalty_matrix = np.zeros((k, k))
-                penalty_matrix[:-1, :-1] = RIDGE * np.eye(k - 1)
+                penalty_matrix[:-1, :-1] = get_env_ridge() * np.eye(k - 1)
             else:
-                penalty_matrix = RIDGE * np.eye(k)
+                penalty_matrix = get_env_ridge() * np.eye(k)
             xwx += penalty_matrix
 
-        if LM_DAMPING:
+        if get_env_lm_damping():
             lm_penalty_matrix = self.lm_lambda * np.eye(k)
             xwx += lm_penalty_matrix
 
@@ -100,7 +100,7 @@ class RegressionTest:
         except np.linalg.LinAlgError:
             xwx_inv = np.linalg.pinv(xwx)
 
-        if DEBUG > 3:
+        if get_env_debug() > 3:
             print(
                 f"{self.response} ~ {sorted(list(self.predictors))} - Iteration {self.iterations}/{self.max_iterations}"
             )
@@ -123,6 +123,7 @@ class RegressionTest:
         xwx = sum([_update.xwx for _update in update])
         xwz = sum([_update.xwz for _update in update])
         n = int(sum([_update.n for _update in update]))
+
         # if self.response == "A" and self.predictors == {"B", "C", "E"}:
         #     print(self.lm_lambda)
         # if abs(self.llf - llf) > 10:
@@ -133,15 +134,9 @@ class RegressionTest:
             llf = -0.5 * n * np.log(2 * np.pi * sigma2) - 0.5 * n
             llf = llf.astype(np.float64).item()  # uses np.float128 for higher precision
 
-        if self.response == "E" and self.predictors == {"C"}:
-            # print(np.linalg.eigvals(xwx))
-            # print(np.linalg.norm(xwz, 2))
-            # print(self.lm_lambda)
-            # print(self.llf, llf)
-            # print(xwx)
-            pass
+        #print(np.linalg.cond(xwx))
 
-        if LINE_SEARCH and self.llf > llf:
+        if get_env_line_search() and self.llf > llf:
             # if self.response == "E" and self.predictors == {"C"}:
             #     print(self.llf, llf)
             # if no small step improves llf, stop fitting
@@ -151,6 +146,7 @@ class RegressionTest:
                     # asd
                     self.bad_fit = True
                     self.early_stop = True
+                    #print('Early stop no improvement')
                     return
                 if self.lm_lambda <= 1:
                     self.lm_lambda = 1
@@ -159,7 +155,7 @@ class RegressionTest:
                 self.beta = self._get_new_beta(
                     self.previous_xwx,
                     self.previous_xwz
-                    + np.random.normal(0, 1e-3, self.previous_xwz.shape),
+                    #+ np.random.normal(0, 1e-3, self.previous_xwz.shape),
                 )
                 self.reposition_count += 1
                 return
@@ -185,8 +181,9 @@ class RegressionTest:
         if (
             self.iterations == 0
             and np.linalg.norm(self.beta - beta) < 1e-4
-            or np.linalg.norm(self.beta - beta) < 1e-7
+            or np.linalg.norm(self.beta - beta) < 1e-8
         ):
+            #('Early stop small step')
             self.early_stop = True
             return
         self.beta = beta
@@ -328,7 +325,7 @@ class LikelihoodRatioTest:
             2 * (t1_llf - t0_llf), t1_dof - t0_dof
         ).item()
 
-        if DEBUG >= 2:
+        if get_env_debug() >= 2:
             print(
                 f"*** Calculating p value for independence of {self.response} from {self.test_variable} given {sorted(list(self.conditioning_set))}"
             )
@@ -423,7 +420,7 @@ class SymmetricLikelihoodRatioTest:
             max(self.lrt1.p_value, self.lrt2.p_value),
         )
 
-        if DEBUG >= 2:
+        if get_env_debug() >= 2:
             print(
                 f"*** Combining p values for symmetry of tests between {self.lrt1.response} and {self.lrt2.response} given {self.lrt1.conditioning_set}"
             )
@@ -449,7 +446,7 @@ class TestEngine:
         self.test = None
 
     def _get_number_of_parameters(self, resp_var, cond_vars):
-        num_params = 1 if FIT_INTERCEPT else 0
+        num_params = 1 if get_env_fit_intercept() else 0
 
         for var in cond_vars:
             if var in self.category_expressions:

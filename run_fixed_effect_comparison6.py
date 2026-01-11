@@ -17,8 +17,8 @@ from rpy2.robjects import numpy2ri, pandas2ri
 
 import fedci
 
-# cb.consolewrite_print = lambda x: None
-# cb.consolewrite_warnerror = lambda x: None
+cb.consolewrite_print = lambda x: None
+cb.consolewrite_warnerror = lambda x: None
 
 ro.r["source"]("./ci_functions2.r")
 get_data_f = ro.globalenv["get_data"]
@@ -156,6 +156,7 @@ def server_results_to_dataframe(labels, results):
         "norm_X_unres",
         "norm_Y_res",
         "norm_Y_unres",
+        "fedci_bad_fit",
     )
     rows = []
 
@@ -193,10 +194,15 @@ def server_results_to_dataframe(labels, results):
         lrt1_restricted = sorted_betas[2]
         lrt1_unrestricted = sorted_betas[3]
 
-        s_labels_string = ",".join(sorted(test.conditioning_set))
+
+        cond_set = test.conditioning_set
+
+        cond_set = sorted(list(set(cond_set) - {'__client'}))
+
+        s_labels_string = ",".join(cond_set)
         rows.append(
             (
-                len(test.conditioning_set),
+                len(cond_set),
                 test.v0,
                 test.v1,
                 s_labels_string,
@@ -205,6 +211,7 @@ def server_results_to_dataframe(labels, results):
                 lrt0_unrestricted,
                 lrt1_restricted,
                 lrt1_unrestricted,
+                test.bad_fit,
             )
         )
 
@@ -396,12 +403,12 @@ def test_dataset(df, labels):
     # x = server.test("A", "C", ["B", "D"])
     # x = server.test("A", "C", ["E"])
     # x = server.test("A", "C", ["CLIENT"])
-    x = server.test("A", "E", ["C"])
+    #x = server.test("A", "E", ["C"])
     # x = server.test("A", "E", ["B", "C", "CLIENT"])
     # x = server.test("B", "C", ["A", "D"])
     # x = server.test("A", "E", ["B", "C"])
-    print(x)
-    asd
+    # print(x)
+    # asd
 
     fedci_results = server.run()
     t3 = time.time()
@@ -421,17 +428,12 @@ data_dir = "experiments/fixed_effect_data/sim"
 seed_start = 10000
 num_runs = 30
 SEEDS = range(seed_start, seed_start + num_runs)
-SEEDS = [10001]
-SAMPLES = [2500]
+SEEDS = [10002]
+SAMPLES = [1000]
 CLIENTS = [4]
-
-pag_ids_to_test = [18]
-#  │ B   ┆ C   ┆ A,D ┆ 18     ┆ 10019 ┆ 8          ┆ 2500
-#    A   ┆ B   ┆ C,E ┆ 18     ┆ 10000 ┆ 4          ┆ 5000
-#    A   ┆ E   ┆ B,C ┆ 18     ┆ 10001 ┆ 8          ┆ 500
-#    A   ┆ C   ┆     ┆ 18     ┆ 10001 ┆ 8          ┆ 1000        ┆ 0.068394      ┆ 0.34866
-#    A   ┆ E   ┆ C   ┆ 18     ┆ 10001 ┆ 4          ┆ 2500
-
+pag_ids_to_test = [97]
+# B   ┆ C   ┆ D,E ┆ 15     ┆ 10017 ┆ 8          ┆ 2500
+# 10002 ┆ 97     ┆ 1000        ┆ 4          ┆ A   ┆ D   ┆ B,E ┆ 0.590267      ┆ 0.220164      ┆ 0.287829                  ┆ 0.223485     │
 
 # print(pag_ids_to_test)
 # asd
@@ -451,7 +453,6 @@ for pag_id in tqdm(pag_ids_to_test, position=0, leave=True):
 
         base_pag = test_pag_mapping[pag_id]
         label_split = test_label_split_mapping[pag_id]
-        print(label_split)
 
         df_msep = df_msep_mapping[pag_id]
 
@@ -494,8 +495,9 @@ for pag_id in tqdm(pag_ids_to_test, position=0, leave=True):
                 df = get_data(
                     fixed_effect_pag, num_samples, var_types, var_levels_list, seed
                 )
-                print(df.head())
-
+                print(label_split)
+                df.write_parquet('test_data2.parquet')
+                asd
                 df_pooled, df_fisher, df_fedci, time_pooled, time_fisher, time_fedci = (
                     test_dataset(df, label_split)
                 )
@@ -549,64 +551,3 @@ for pag_id in tqdm(pag_ids_to_test, position=0, leave=True):
                 if not os.path.exists(f"{data_dir}"):
                     os.makedirs(f"{data_dir}")
                 df_result.write_parquet(target_file)
-
-"""
-Testing if X= 1 is indep of Y= 4 given S={ 3,5 }
-Running ordinal regression for  4
-[1] "DOFs 9; T 15.9753935124704; pval 0.0673972169997102"
-$message
-NULL
-
-$be
-                    Y1         Y2         Y3
-(Intercept)  0.9763096  1.7402639  2.6879178
-C           -0.1858732 -0.2257430 -0.3733794
-CLIENTB     -0.2107345 -0.3699325 -0.5462503
-
-$devi
-[1] 2339.91
-
-$message
-NULL
-
-$be
-                    Y1         Y2         Y3
-(Intercept)  0.5504733  1.0638319  1.7254969
-C           -0.1960920 -0.2396880 -0.3917185
-CLIENTB     -0.1093857 -0.4441255 -0.7748229
-AB           0.6134588  0.8835081  1.2552273
-AC           0.3929779  0.8241394  1.3307232
-AD           0.2895338  0.7265759  1.1574153
-
-$devi
-[1] 2323.935
-
-Running multinomial regression for  1
-Call:
-nnet::multinom(formula = ydat ~ ., data = ds0, trace = FALSE)
-
-Coefficients:
-  (Intercept)         C  CLIENTB
-B   1.0570614 0.2539361 11.12926
-C   0.5005523 0.1780510 13.79980
-D  -2.0289295 0.1902302 17.22232
-
-Residual Deviance: 2237.774
-AIC: 2255.774
-Call:
-nnet::multinom(formula = ydat ~ ., data = ds1, trace = FALSE)
-
-Coefficients:
-  (Intercept)         C  CLIENTB        E.L        E.Q          E.C
-B   0.7687672 0.2974033 10.37071 -0.9496999 -0.3600327 -0.099469863
-C   0.2855531 0.2185133 13.05520 -0.9910809 -0.6441314 -0.009132791
-D  -2.1922699 0.2227308 16.47032 -0.8758148 -0.6051897  0.086314016
-
-Residual Deviance: 2220.91
-AIC: 2256.91
-p1: 0.06739722 and p2: 0.05089488
-"""
-
-"""
-
-"""
