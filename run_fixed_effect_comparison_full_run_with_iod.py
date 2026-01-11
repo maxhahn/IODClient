@@ -23,8 +23,8 @@ COEF_THRESHOLD = 0.2  # 0.1
 pag_msep_location = "pag_msep/pag-{}.parquet"
 # pag_msep_location = "experiments/pag_msep/pag-{}.parquet"
 
-# cb.consolewrite_print = lambda x: None
-# cb.consolewrite_warnerror = lambda x: None
+cb.consolewrite_print = lambda x: None
+cb.consolewrite_warnerror = lambda x: None
 
 ro.r["source"]("./ci_functions2.r")
 get_data_f = ro.globalenv["get_data"]
@@ -400,7 +400,7 @@ def test_dataset(df, labels):
     ]
     meta_dfs, meta_df_labels = zip(*[mxm_ci_test(d) for d in _dfs])
     meta_dfs = [
-        replace_idx_with_varnames(pl.from_pandas(_df), _labels)
+        replace_idx_with_varnames(pl.from_pandas(_df).drop('p1', 'p2'), _labels)
         for _df, _labels in zip(meta_dfs, meta_df_labels)
     ]
 
@@ -439,15 +439,8 @@ def test_dataset(df, labels):
         "ord", "X", "Y", "S"
     )
 
-    dfs = [d for i,d in enumerate(dfs,start=1) if i%2==0]
-    for d in dfs:
-        print(d['CLIENT'].unique().to_list())
-
     os.environ['CLIENT_HETEROGENIETY'] = "2"
     server = fedci.Server([fedci.Client(str(i), d) for i, d in enumerate(dfs, start=1)])
-
-    x = server.test('A', 'D', ['B', 'E'])
-    asd
 
     fedci_results = server.run()
     t4 = time.time()
@@ -456,24 +449,6 @@ def test_dataset(df, labels):
     fedci_df2 = server_results_to_dataframe(fedci_all_labels, fedci_results).sort(
         "ord", "X", "Y", "S"
     )
-
-     # os.environ['CLIENT_HETEROGENIETY'] = "0"
-     # server = fedci.Server([fedci.Client(str(i), d) for i, d in enumerate(dfs, start=1)])
-
-     # x = server.test('A', 'D', ['B', 'E'])
-     # asd
-
-     # fedci_results = server.run(forced_cond_var='CLIENT')
-     # t5 = time.time()
-     # df_pvals = df_pvals.filter((pl.col('X')!='CLIENT') & (pl.col('Y')!='CLIENT') & (pl.col('S').str.contains('CLIENT')))
-     # fedci_results = fedci_results.with_columns(pl.col('S').str.split(',').list.filter(pl.element()!='CLIENT').list.join(','), pl.col('ord')-1)
-
-     # t4 = time.time()
-     # fedci_all_labels = sorted(list(server.schema.keys()))
-
-     # fedci_pooled = server_results_to_dataframe(fedci_all_labels, fedci_results).sort(
-     #     "ord", "X", "Y", "S"
-     # )
 
     return pooled_result_df, fisher_df, fedci_df, fedci_df2, t1 - t0, t2 - t1, t3 - t2, t4 - t3
 
@@ -577,11 +552,11 @@ CLIENTS = [4, 8, 12]
 
 pag_ids_to_test = sorted(three_tail_pags)[::-1]
 
-if True:
-    SEEDS = [10002]
-    SAMPLES = [1000]
-    CLIENTS = [4]
-    pag_ids_to_test = [97]
+# if True:
+#     SEEDS = [10002]
+#     SAMPLES = [1000]
+#     CLIENTS = [4]
+#     pag_ids_to_test = [97]
 
 
 # print(pag_ids_to_test)
@@ -639,8 +614,8 @@ for pag_id in tqdm(pag_ids_to_test, position=0, leave=True):
             for num_samples in tqdm(SAMPLES, position=3, leave=False):
                 file_key = f"{seed}-id{pag_id}-s{num_samples}-c{num_clients}.parquet"
                 target_file = f"{data_dir}/{file_key}"
-                #if os.path.exists(target_file):
-                #    continue
+                if os.path.exists(target_file):
+                   continue
 
                 df = get_data(
                     fixed_effect_pag, num_samples, var_types, var_levels_list, seed
@@ -729,10 +704,10 @@ for pag_id in tqdm(pag_ids_to_test, position=0, leave=True):
                 )
 
 
-                df = df_result.with_columns(pval_diff_to_local=pl.col('pooled_pvalue')-pl.col('fedci_pvalue'))
-                print(df.sort('pval_diff_to_local').select('seed', 'pag_id', 'num_samples', 'partitions', 'X','Y','S', cs.contains('pvalue')))
+                # df = df_result.with_columns(pval_diff_to_local=pl.col('pooled_pvalue')-pl.col('fedci_pvalue'))
+                # print(df.sort('pval_diff_to_local').select('seed', 'pag_id', 'num_samples', 'partitions', 'X','Y','S', cs.contains('pvalue'), 'p1', 'p2'))
 
-                asd
+                # asd
 
                 if not os.path.exists(f"{data_dir}"):
                     os.makedirs(f"{data_dir}")
