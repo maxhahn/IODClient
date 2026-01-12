@@ -1069,8 +1069,34 @@ def pval_diffs(df_base):
     print(df.sort('pval_diff_to_local').select('seed', 'pag_id', 'num_samples', 'partitions', 'X','Y','S', cs.contains('pvalue'), 'p1', 'p2'))
 
     df_ = df.filter((pl.col('p1')-pl.col('p2')).abs() > 0.3)
+    print('== Correlation to MSep when pvalue is not converged to a single value')
     print(len(df_))
     print(df_.select("MSep", cs.contains("pvalue")).corr())
+
+
+    df_ = df.with_columns(
+        pl.col("fedci_pvalue", "pooled_pvalue")
+        .name.suffix("_log")
+        .clip(pl.lit(1e-15), None)
+        .log()
+    )
+    log = False
+    if log:
+        df_ = df_.with_columns(diff_log=(pl.col("fedci_pvalue_log") - pl.col("pooled_pvalue_log")).abs())
+        df_ = df_.drop(cs.ends_with('pvalue_log'))
+        df_ = df_.filter(pl.col('diff_log') > 2)
+        print('== Correlation to MSep when fedci deviates from pooled log scale')
+        print(df_.select("MSep", cs.contains("pvalue")).corr())
+        print('== Accuracy when fedci deviates from pooled in log scale')
+        print(df_.with_columns((cs.contains('_pvalue')>= alpha)==pl.col('MSep')).group_by('MSep').agg(cs.contains('_pvalue').mean()))
+    else:
+        df_ = df.with_columns(diff_pval=(pl.col("fedci_pvalue") - pl.col("pooled_pvalue")).abs())
+        df_ = df_.filter(pl.col('diff_pval') > 0.2)
+        print('== Correlation to MSep when fedci deviates from pooled')
+        print(len(df_))
+        print(df_.select("MSep", cs.contains("pvalue")).corr())
+        print('== Accuracy when fedci deviates from pooled')
+        print(df_.with_columns((cs.contains('_pvalue')>= alpha)==pl.col('MSep')).group_by('MSep').agg(cs.contains('_pvalue').mean()))
 
 show_null_counts_in_pvalues(df_base)
 show_correlation_to_msep(df_base)
