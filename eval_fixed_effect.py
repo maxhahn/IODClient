@@ -1065,9 +1065,12 @@ def show_deviation_from_pooled(df_base):
 def pval_diffs(df_base):
     df = df_base
 
-
     df = df.with_columns(pval_diff_to_local=pl.col('pooled_pvalue')-pl.col('fedci_pvalue'))
-    print(df.sort('pval_diff_to_local').select('seed', 'pag_id', 'num_samples', 'partitions', 'X','Y','S', cs.contains('pvalue')))
+    print(df.sort('pval_diff_to_local').select('seed', 'pag_id', 'num_samples', 'partitions', 'X','Y','S', cs.contains('pvalue'), 'p1', 'p2'))
+
+    df_ = df.filter((pl.col('p1')-pl.col('p2')).abs() > 0.3)
+    print(len(df_))
+    print(df_.select("MSep", cs.contains("pvalue")).corr())
 
 show_null_counts_in_pvalues(df_base)
 show_correlation_to_msep(df_base)
