@@ -24,15 +24,20 @@ image_folder = "images/fixed_effect_images"
 folder = "experiments/fixed_effect_data/sim"
 # folder = "experiments/fixed_effect_data/SLIDES_MIXED"
 
+sort_order = {"fedCI": 0, "Fisher": 1, "Pooled": 2}
+
+
 alpha = 0.05
 
-dfs = []
-for file in glob.glob(f"{folder}/*.parquet"):
-    df = pl.read_parquet(file)
-    dfs.append(df)
-#df_base = pl.read_parquet(f"{folder}/*.parquet")
+# dfs = []
+# for file in glob.glob(f"{folder}/*.parquet"):
+#     df = pl.read_parquet(file)
+#     dfs.append(df)
+# # df_base = pl.read_parquet(f"{folder}/*.parquet")
 
-df_base = pl.concat(dfs, how='vertical_relaxed')
+# df_base = pl.concat(dfs, how="vertical_relaxed")
+
+df_base = pl.read_parquet("simulations/*.parquet")
 
 ####
 # FILTER OUT ALL IMPOSSIBLE TESTS (are auto filtered in updated code, but this supports old files)
@@ -176,14 +181,14 @@ def show_correlation_to_msep(df_base):
         {"p_value_correlation": "Fisher"}
     )
     df_fed = get_correlation(df, identifiers, "fedci_pvalue", "MSep").rename(
-        {"p_value_correlation": "FedCI"}
+        {"p_value_correlation": "fedCI"}
     )
     if len(identifiers) == 0:
         _df = pl.concat(
             [
                 df_fisher[0].select("Pooled"),
                 df_fisher[0].select("Fisher"),
-                df_fed[0].select("FedCI"),
+                df_fed[0].select("fedCI"),
             ],
             how="horizontal",
         )
@@ -197,7 +202,7 @@ def show_correlation_to_msep(df_base):
         )
 
     df_unpivot = _df.unpivot(
-        on=["Pooled", "Fisher", "FedCI"],
+        on=["Pooled", "Fisher", "fedCI"],
         index=identifiers,
         value_name="correlation",
         variable_name="Method",
@@ -207,10 +212,14 @@ def show_correlation_to_msep(df_base):
         {"num_samples": "\# Samples", "correlation": "Correlation"}
     )
 
+    df_unpivot = df_unpivot.with_columns(
+        sort_key=pl.col("Method").replace_strict(sort_order)
+    )
+
     for i in df["partitions"].unique().to_list():
         _plot = (
             df_unpivot.filter(pl.col("partitions") == i)
-            .sort("Method", "\# Samples")
+            .sort("sort_key", "\# Samples")
             .hvplot.line(
                 x="\# Samples",
                 y="Correlation",
@@ -223,6 +232,7 @@ def show_correlation_to_msep(df_base):
                 xlabel=r"\# Samples",  # LaTeX-escaped #
                 ylabel=r"Correlation",
                 linestyle=["solid", "dashed", "dotted"],
+                linewidth=[2, 2, 6],
                 # title=f'{"Client" if i == 1 else "Clients"}'
             )
         )
@@ -300,12 +310,12 @@ def show_msep_agreement(df_base):
         {
             "pooled_pvalue": "Pooled",
             "fisher_pvalue": "Fisher",
-            "fedci_pvalue": "FedCI",
+            "fedci_pvalue": "fedCI",
         }
     )
 
     df_unpivot = df_dep.unpivot(
-        on=["Pooled", "Fisher", "FedCI"],
+        on=["Pooled", "Fisher", "fedCI"],
         index=identifiers,
         value_name="accuracy",
         variable_name="Method",
@@ -315,10 +325,14 @@ def show_msep_agreement(df_base):
         {"num_samples": "\# Samples", "accuracy": "Decision Agreements"}
     )
 
+    df_unpivot = df_unpivot.with_columns(
+        sort_key=pl.col("Method").replace_strict(sort_order)
+    )
+
     for i in df["partitions"].unique().to_list():
         _plot = (
             df_unpivot.filter(pl.col("partitions") == i)
-            .sort("Method", "\# Samples")
+            .sort("sort_key", "\# Samples")
             .hvplot.line(
                 x="\# Samples",
                 y="Decision Agreements",
@@ -331,6 +345,7 @@ def show_msep_agreement(df_base):
                 xlabel=r"\# Samples",  # LaTeX-escaped #
                 ylabel=r"Decision Agreements",
                 linestyle=["solid", "dashed", "dotted"],
+                linewidth=[2, 2, 6],
                 # title=f'{"Client" if i == 1 else "Clients"}'
             )
         )
@@ -395,12 +410,12 @@ def show_msep_agreement(df_base):
         {
             "pooled_pvalue": "Pooled",
             "fisher_pvalue": "Fisher",
-            "fedci_pvalue": "FedCI",
+            "fedci_pvalue": "fedCI",
         }
     )
 
     df_unpivot = df_indep.unpivot(
-        on=["Pooled", "Fisher", "FedCI"],
+        on=["Pooled", "Fisher", "fedCI"],
         index=identifiers,
         value_name="accuracy",
         variable_name="Method",
@@ -410,10 +425,14 @@ def show_msep_agreement(df_base):
         {"num_samples": "\# Samples", "accuracy": "Decision Agreements"}
     )
 
+    df_unpivot = df_unpivot.with_columns(
+        sort_key=pl.col("Method").replace_strict(sort_order)
+    )
+
     for i in df["partitions"].unique().to_list():
         _plot = (
             df_unpivot.filter(pl.col("partitions") == i)
-            .sort("Method", "\# Samples")
+            .sort("sort_key", "\# Samples")
             .hvplot.line(
                 x="\# Samples",
                 y="Decision Agreements",
@@ -426,6 +445,7 @@ def show_msep_agreement(df_base):
                 xlabel=r"\# Samples",  # LaTeX-escaped #
                 ylabel=r"Decision Agreements",
                 linestyle=["solid", "dashed", "dotted"],
+                linewidth=[2, 2, 6],
                 # title=f'{"Client" if i == 1 else "Clients"}'
             )
         )
@@ -492,16 +512,16 @@ def show_msep_agreement(df_base):
             + pl.col("Fisher_indep") * pl.col("len_indep")
         )
         / pl.col("total_len"),
-        FedCI=(
-            pl.col("FedCI") * pl.col("len")
-            + pl.col("FedCI_indep") * pl.col("len_indep")
+        fedCI=(
+            pl.col("fedCI") * pl.col("len")
+            + pl.col("fedCI_indep") * pl.col("len_indep")
         )
         / pl.col("total_len"),
     )
     df_weighted = df_weighted.drop(cs.ends_with("_indep")).drop("total_len")
 
     df_unpivot = df_weighted.unpivot(
-        on=["Pooled", "Fisher", "FedCI"],
+        on=["Pooled", "Fisher", "fedCI"],
         index=identifiers,
         value_name="accuracy",
         variable_name="Method",
@@ -511,10 +531,14 @@ def show_msep_agreement(df_base):
         {"num_samples": "\# Samples", "accuracy": "Decision Agreements"}
     )
 
+    df_unpivot = df_unpivot.with_columns(
+        sort_key=pl.col("Method").replace_strict(sort_order)
+    )
+
     for i in df["partitions"].unique().to_list():
         _plot = (
             df_unpivot.filter(pl.col("partitions") == i)
-            .sort("Method", "\# Samples")
+            .sort("sort_key", "\# Samples")
             .hvplot.line(
                 x="\# Samples",
                 y="Decision Agreements",
@@ -527,6 +551,7 @@ def show_msep_agreement(df_base):
                 xlabel=r"\# Samples",  # LaTeX-escaped #
                 ylabel=r"Decision Agreements",
                 linestyle=["solid", "dashed", "dotted"],
+                linewidth=[2, 2, 6],
                 # title=f'{"Client" if i == 1 else "Clients"}'
             )
         )
@@ -598,7 +623,7 @@ def show_difference_to_msep(df_base):
     print(df.group_by("MSep", "pooled_pvalue").len().sort("MSep", "pooled_pvalue"))
     print("Fisher")
     print(df.group_by("MSep", "fisher_pvalue").len().sort("MSep", "fisher_pvalue"))
-    print("FedCI")
+    print("fedCI")
     print(df.group_by("MSep", "fedci_pvalue").len().sort("MSep", "fedci_pvalue"))
 
 
@@ -611,7 +636,7 @@ def show_correct_or_incorrect(df_base):
     print(df.group_by("pooled_pvalue").len().sort("pooled_pvalue"))
     print("Fisher")
     print(df.group_by("fisher_pvalue").len().sort("fisher_pvalue"))
-    print("FedCI")
+    print("fedCI")
     print(df.group_by("fedci_pvalue").len().sort("fedci_pvalue"))
 
 
@@ -633,7 +658,7 @@ def show_msep_versus_prediction_by_partition(df_base):
         .len()
         .sort("partitions", "MSep", "fisher_pvalue")
     )
-    print("FedCI")
+    print("fedCI")
     print(
         df.group_by("partitions", "MSep", "fedci_pvalue")
         .len()
@@ -661,7 +686,7 @@ def show_incorrect_in_perc_by_partition(df_base):
         .agg(perc=pl.len() / pl.first("num_tests_per_partition"))
         .sort("MSep", "fisher_pvalue", "partitions")
     )
-    print("FedCI")
+    print("fedCI")
     print(
         df.filter(pl.col("MSep") != pl.col("fedci_pvalue"))
         .group_by("partitions", "MSep", "fedci_pvalue")
@@ -690,7 +715,7 @@ def show_incorrect_in_perc_based_on_indep_by_partition(df_base):
         .agg(perc=pl.len() / pl.first("num_tests_per_partition"))
         .sort("MSep", "fisher_pvalue", "partitions")
     )
-    print("FedCI")
+    print("fedCI")
     print(
         df.filter(pl.col("MSep") != pl.col("fedci_pvalue"))
         .group_by("partitions", "MSep", "fedci_pvalue")
@@ -719,7 +744,7 @@ def show_incorrect_in_perc_based_on_indep_by_partition_with_ord(df_base):
         .agg(perc=pl.len() / pl.first("num_tests_per_partition"))
         .sort("ord", "MSep", "fisher_pvalue", "partitions")
     )
-    print("FedCI")
+    print("fedCI")
     print(
         df.filter(pl.col("MSep") != pl.col("fedci_pvalue"))
         .group_by("ord", "partitions", "MSep", "fedci_pvalue")
@@ -736,7 +761,7 @@ def show_correctness_on_bad_fisher_predictions(df_base):
 
 
 def show_fisher_v_fedci_disagreement(df_base):
-    print("== Show Number of Disagreements between Fisher and FedCI")
+    print("== Show Number of Disagreements between Fisher and fedCI")
     df = df_base
     df = df_base.with_columns(cs.contains("pvalue") >= alpha)
     df = df.with_columns(cs.contains("pvalue") == pl.col("MSep"))
@@ -929,10 +954,10 @@ def show_deviation_from_pooled(df_base):
         ax.xaxis.labelpad = 10
         ax.yaxis.labelpad = 10
 
-    df = df.rename({"fisher_pvalue_diff": "Fisher", "fedci_pvalue_diff": "FedCI"})
+    df = df.rename({"fisher_pvalue_diff": "Fisher", "fedci_pvalue_diff": "fedCI"})
 
     df = df.unpivot(
-        on=["FedCI", "Fisher"],
+        on=["fedCI", "Fisher"],
         index=["num_samples", "partitions"],
         value_name="p-value Difference",
         variable_name="Method",
@@ -1000,12 +1025,25 @@ def show_deviation_from_pooled(df_base):
 
     df = df.sort("Method", "num_samples", "partitions")
 
+    print("== MEAN AND STD OF PVAL LOG RATIO")
+    print(
+        df.group_by("Method", "partitions", "num_samples")
+        .agg(
+            pl.col("p-value Difference").mean().name.suffix("_mean"),
+            pl.col("p-value Difference").std().name.suffix("_std"),
+        )
+        .sort("Method", "partitions", "num_samples")
+    )
+    # asd
+
     # _df = _df.filter(pl.col("num_splits") > 2)
+
+    df = df.with_columns(sort_key=pl.col("Method").replace_strict(sort_order))
 
     for nsamples in df["num_samples"].unique().to_list():
         _df = df.filter(pl.col("num_samples") == nsamples)
         # print(_df)
-        plot = _df.hvplot.box(
+        plot = _df.sort("sort_key", "partitions").hvplot.box(
             # y='p-value Difference',# 'Meta-Analysis'],
             y="p-value Difference",
             by=["Method", "partitions"],
@@ -1036,7 +1074,7 @@ def show_deviation_from_pooled(df_base):
     for nparts in df["partitions"].unique().to_list():
         _df = df.filter(pl.col("partitions") == nparts)
 
-        plot = _df.hvplot.box(
+        plot = _df.sort("sort_key", "num_samples").hvplot.box(
             # y='p-value Difference',# 'Meta-Analysis'],
             y="p-value Difference",
             by=["Method", "num_samples"],
@@ -1044,7 +1082,7 @@ def show_deviation_from_pooled(df_base):
             # by=['test_id', 'Method'],
             # ylabel='Normalized Difference in p-value',
             ylabel="Log-ratio of p-values",
-            xlabel="Method, # Samples",
+            xlabel="Method, \# Samples",
             # ylim=(-1,1),
             showfliers=True,
         )
@@ -1065,14 +1103,28 @@ def show_deviation_from_pooled(df_base):
 def pval_diffs(df_base):
     df = df_base
 
-    df = df.with_columns(pval_diff_to_local=pl.col('pooled_pvalue')-pl.col('fedci_pvalue'))
-    print(df.sort('pval_diff_to_local').select('seed', 'pag_id', 'num_samples', 'partitions', 'X','Y','S', cs.contains('pvalue'), 'p1', 'p2'))
+    df = df.with_columns(
+        pval_diff_to_local=pl.col("pooled_pvalue") - pl.col("fedci_pvalue")
+    )
+    print(
+        df.sort("pval_diff_to_local").select(
+            "seed",
+            "pag_id",
+            "num_samples",
+            "partitions",
+            "X",
+            "Y",
+            "S",
+            cs.contains("pvalue"),
+            "p1",
+            "p2",
+        )
+    )
 
-    df_ = df.filter((pl.col('p1')-pl.col('p2')).abs() > 0.3)
-    print('== Correlation to MSep when pvalue is not converged to a single value')
+    df_ = df.filter((pl.col("p1") - pl.col("p2")).abs() > 0.3)
+    print("== Correlation to MSep when pvalue is not converged to a single value")
     print(len(df_))
     print(df_.select("MSep", cs.contains("pvalue")).corr())
-
 
     df_ = df.with_columns(
         pl.col("fedci_pvalue", "pooled_pvalue")
@@ -1082,21 +1134,34 @@ def pval_diffs(df_base):
     )
     log = False
     if log:
-        df_ = df_.with_columns(diff_log=(pl.col("fedci_pvalue_log") - pl.col("pooled_pvalue_log")).abs())
-        df_ = df_.drop(cs.ends_with('pvalue_log'))
-        df_ = df_.filter(pl.col('diff_log') > 2)
-        print('== Correlation to MSep when fedci deviates from pooled log scale')
+        df_ = df_.with_columns(
+            diff_log=(pl.col("fedci_pvalue_log") - pl.col("pooled_pvalue_log")).abs()
+        )
+        df_ = df_.drop(cs.ends_with("pvalue_log"))
+        df_ = df_.filter(pl.col("diff_log") > 2)
+        print("== Correlation to MSep when fedci deviates from pooled log scale")
         print(df_.select("MSep", cs.contains("pvalue")).corr())
-        print('== Accuracy when fedci deviates from pooled in log scale')
-        print(df_.with_columns((cs.contains('_pvalue')>= alpha)==pl.col('MSep')).group_by('MSep').agg(cs.contains('_pvalue').mean()))
+        print("== Accuracy when fedci deviates from pooled in log scale")
+        print(
+            df_.with_columns((cs.contains("_pvalue") >= alpha) == pl.col("MSep"))
+            .group_by("MSep")
+            .agg(cs.contains("_pvalue").mean())
+        )
     else:
-        df_ = df.with_columns(diff_pval=(pl.col("fedci_pvalue") - pl.col("pooled_pvalue")).abs())
-        df_ = df_.filter(pl.col('diff_pval') > 0.2)
-        print('== Correlation to MSep when fedci deviates from pooled')
+        df_ = df.with_columns(
+            diff_pval=(pl.col("fedci_pvalue") - pl.col("pooled_pvalue")).abs()
+        )
+        df_ = df_.filter(pl.col("diff_pval") > 0.2)
+        print("== Correlation to MSep when fedci deviates from pooled")
         print(len(df_))
         print(df_.select("MSep", cs.contains("pvalue")).corr())
-        print('== Accuracy when fedci deviates from pooled')
-        print(df_.with_columns((cs.contains('_pvalue')>= alpha)==pl.col('MSep')).group_by('MSep').agg(cs.contains('_pvalue').mean()))
+        print("== Accuracy when fedci deviates from pooled")
+        print(
+            df_.with_columns((cs.contains("_pvalue") >= alpha) == pl.col("MSep"))
+            .group_by("MSep")
+            .agg(cs.contains("_pvalue").mean())
+        )
+
 
 show_null_counts_in_pvalues(df_base)
 show_correlation_to_msep(df_base)
