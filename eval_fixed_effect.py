@@ -18,6 +18,8 @@ plt.rcParams["axes.unicode_minus"] = False
 
 pl.Config.set_tbl_rows(40)
 
+COORD_ASC_FEDCI = False
+
 # df.group_by('pag_id', 'seed', 'num_samples', 'partitions').len().filter(pl.col('len')!=42)
 
 image_folder = "images/fixed_effect_images"
@@ -917,9 +919,17 @@ def show_deviation_from_pooled(df_base):
 
     df = df.with_columns(cs.contains("pvalue").clip(pl.lit(1e-15), None).log())
 
+    if COORD_ASC_FEDCI:
+        fedci_col = "fedci_local_effect_pvalue"
+        file_ending = "-CA"
+    else:
+        fedci_col = "fedci_pvalue"
+        file_ending = ""
+
     df = df.with_columns(
         fisher_pvalue_diff=pl.col("fisher_pvalue") - pl.col("pooled_pvalue"),
-        fedci_pvalue_diff=pl.col("fedci_pvalue") - pl.col("pooled_pvalue"),
+        fedci_pvalue_diff=pl.col(fedci_col) - pl.col("pooled_pvalue"),
+        # fedci_pvalue_diff=pl.col("fedci_pvalue") - pl.col("pooled_pvalue"),
         # fedci_pvalue_diff=pl.col("fedci_local_effect_pvalue") - pl.col("pooled_pvalue"),
     )
 
@@ -1131,7 +1141,7 @@ def show_deviation_from_pooled(df_base):
 
         _render = hv.render(plot, backend="matplotlib")
         _render.savefig(
-            f"{image_folder}/logratio2pooled/by-partitions-s{nsamples}.svg",
+            f"{image_folder}/logratio2pooled/by-partitions-s{nsamples}{file_ending}.svg",
             format="svg",
             bbox_inches="tight",
             dpi=300,
@@ -1158,7 +1168,7 @@ def show_deviation_from_pooled(df_base):
 
         _render = hv.render(plot, backend="matplotlib")
         _render.savefig(
-            f"{image_folder}/logratio2pooled/by-samples-p{nparts}.svg",
+            f"{image_folder}/logratio2pooled/by-samples-p{nparts}{file_ending}.svg",
             format="svg",
             bbox_inches="tight",
             dpi=300,
