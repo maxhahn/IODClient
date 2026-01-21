@@ -28,7 +28,7 @@ image_folder = "images/fixed_effect_images"
 folder = "experiments/fixed_effect_data/sim"
 # folder = "experiments/fixed_effect_data/SLIDES_MIXED"
 
-sort_order = {"fedCI": 0, "Fisher": 1, "Pooled": 2}
+sort_order = {"fedCI": 0, "fedCI-CA": 1, "Fisher": 2, "Pooled": 3}
 
 
 alpha = 0.05
@@ -967,10 +967,12 @@ def show_deviation_from_pooled(df_base):
         ax.xaxis.labelpad = 10
         ax.yaxis.labelpad = 10
 
-    df = df.rename({"fisher_pvalue_diff": "Fisher", "fedci_pvalue_diff": "fedCI"})
+    df = df.rename(
+        {"fisher_pvalue_diff": "Fisher", "fedci_pvalue_diff": f"fedCI{file_ending}"}
+    )
 
     df = df.unpivot(
-        on=["fedCI", "Fisher"],
+        on=[f"fedCI{file_ending}", "Fisher"],
         index=["num_samples", "partitions"],
         value_name="p-value Difference",
         variable_name="Method",
