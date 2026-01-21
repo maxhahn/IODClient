@@ -13,6 +13,8 @@ import polars as pl
 import polars.selectors as cs
 
 plt.rcParams.update({"svg.fonttype": "none"})
+plt.rcParams["axes.unicode_minus"] = False
+
 
 pl.Config.set_tbl_rows(40)
 
@@ -918,6 +920,7 @@ def show_deviation_from_pooled(df_base):
     df = df.with_columns(
         fisher_pvalue_diff=pl.col("fisher_pvalue") - pl.col("pooled_pvalue"),
         fedci_pvalue_diff=pl.col("fedci_pvalue") - pl.col("pooled_pvalue"),
+        # fedci_pvalue_diff=pl.col("fedci_local_effect_pvalue") - pl.col("pooled_pvalue"),
     )
 
     print(
@@ -986,6 +989,68 @@ def show_deviation_from_pooled(df_base):
 
         # Set partition numbers as main labels
         ax.set_xticklabels([p[1] for p in parsed])
+
+        # Create method group labels
+        current_method = None
+        method_spans = []
+        start_idx = 0
+
+        for idx, (method, _) in enumerate(parsed):
+            if method != current_method:
+                if current_method is not None:
+                    method_spans.append((current_method, start_idx, idx - 1))
+                current_method = method
+                start_idx = idx
+
+        # Add the last method group
+        if current_method is not None:
+            method_spans.append((current_method, start_idx, len(parsed) - 1))
+
+        # Add method labels below using actual tick positions
+        for method, start, end in method_spans:
+            center = (tick_positions[start] + tick_positions[end]) / 2
+            ax.text(
+                center,
+                -0.15,
+                method,
+                transform=ax.get_xaxis_transform(),
+                ha="center",
+                va="top",
+                fontsize=10,
+                fontweight="bold",
+            )
+
+        # Move the xlabel further down
+        ax.xaxis.set_label_coords(0.5, -0.25)
+
+        # Adjust bottom margin to fit all labels
+        fig.subplots_adjust(bottom=0.25)
+
+    def hierarchical_labels(plot, element):
+        ax = plot.handles["axis"]
+        fig = plot.handles["fig"]
+
+        # Get current tick labels and positions
+        tick_positions = ax.get_xticks()
+        labels = [label.get_text() for label in ax.get_xticklabels()]
+
+        # Parse labels to extract method and partition
+        parsed = []
+        for label in labels:
+            if "," in label:
+                method, partition = label.split(",")
+                parsed.append((method.strip(), partition.strip()))
+            else:
+                parsed.append((label, ""))
+
+        # Set partition numbers as main labels
+        ax.set_xticklabels([p[1] for p in parsed])
+
+        # Increase distance between x tick labels and axis
+        ax.tick_params(axis="x", pad=8)
+
+        # Increase distance between y label and axis
+        ax.yaxis.labelpad = 8
 
         # Create method group labels
         current_method = None
