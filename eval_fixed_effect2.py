@@ -12,7 +12,19 @@ import matplotlib.pyplot as plt
 import polars as pl
 import polars.selectors as cs
 
+
+def adjust_axis_spacing(plot, element):
+    ax = plot.handles["axis"]
+    # Distance between axis line and tick labels
+    ax.tick_params(axis="x", pad=8)
+    ax.tick_params(axis="y", pad=8)
+    # Distance between tick labels and axis labels
+    ax.xaxis.labelpad = 10
+    ax.yaxis.labelpad = 10
+
+
 plt.rcParams.update({"svg.fonttype": "none"})
+plt.rcParams["axes.unicode_minus"] = False
 
 pl.Config.set_tbl_rows(40)
 
@@ -94,17 +106,12 @@ df_base = df_base.with_columns(
     )
 )
 
+print("Before Null Drop", len(df_base))
+df_base = df_base.drop_nulls()
+print("After Null Drop", len(df_base))
+
 
 def eval_shd(df):
-    def adjust_axis_spacing(plot, element):
-        ax = plot.handles["axis"]
-        # Distance between axis line and tick labels
-        ax.tick_params(axis="x", pad=8)
-        ax.tick_params(axis="y", pad=8)
-        # Distance between tick labels and axis labels
-        ax.xaxis.labelpad = 10
-        ax.yaxis.labelpad = 10
-
     def get_shd_stats(df, colname):
         if NORM_SHD:
             df = df.with_columns(pl.col(colname).list.eval(pl.element() / 20))
@@ -231,9 +238,92 @@ def eval_missing_iod(df):
     )
 
     print(df.select(cs.ends_with("_missing_pred").mean()))
+    pl.Config.set_tbl_cols("10")
+    print(
+        df.group_by(cs.ends_with("_missing_pred"))
+        .agg(pl.len())
+        # .sort(cs.ends_with("_missing_pred"))
+        .sort(
+            pl.col("fisher_shds_og_missing_pred"),
+            cs.ends_with("_missing_pred") - cs.by_name("fisher_shds_og_missing_pred"),
+        )
+    )
+
+
+def eval_diff_iod(df):
+    if NORM_SHD:
+        df = df.with_columns(cs.contains("_shds_og").list.eval(pl.element() / 20))
+
+    df = df.with_columns(cs.contains("_shds_og").list.min().name.suffix("_min"))
+    # df = df.with_columns(cs.ends_with("_min").fill_null(1))
+    df = df.with_columns(
+        fedci_pooled_diff=pl.col("fedci_shds_og_min") - pl.col("pooled_shds_og_min"),
+        fedci_ca_pooled_diff=pl.col("fedci_shds_og_right_min")
+        - pl.col("pooled_shds_og_min"),
+        fisher_pooled_diff=pl.col("fisher_shds_og_min") - pl.col("pooled_shds_og_min"),
+        fisher_fedci_diff=pl.col("fisher_shds_og_min") - pl.col("fedci_shds_og_min"),
+        fedci_ca_fedci_diff=pl.col("fedci_shds_og_right_min")
+        - pl.col("fedci_shds_og_min"),
+        fisher_fedci_ca_diff=pl.col("fisher_shds_og_min")
+        - pl.col("fedci_shds_og_right_min"),
+    )
+
+    method_name_dict = {
+        "fisher_fedci_diff": "Fisher-fedCI",
+        "fedci_pooled_diff": "fedCI-Pooled",
+        "fisher_pooled_diff": "Fisher-Pooled",
+    }
+    _df = df.drop(
+        cs.contains("diff") - cs.by_name(list(method_name_dict.keys()))
+    ).unpivot(
+        on=cs.ends_with("_diff"),
+        index=["pag_id", "seed", "num_samples", "partitions"],
+        value_name="shd_stat",
+        variable_name="method",
+    )
+
+    _df = _df.with_columns(pl.col("method").replace_strict(method_name_dict))
+
+    plot = _df.hvplot.box(
+        # y='p-value Difference',# 'Meta-Analysis'],
+        y="shd_stat",
+        by=["method"],
+        # y='Meta-Analysis',# 'Meta-Analysis'],
+        # by=['test_id', 'Method'],
+        # ylabel='Normalized Difference in p-value',
+        ylabel="SHD",
+        xlabel="Method",
+        # ylim=(-1,1),
+        showfliers=True,
+        # notch=True,
+    )
+    plot = plot.opts(
+        hooks=[adjust_axis_spacing],
+    )
+
+    _render = hv.render(plot, backend="matplotlib")
+    _render.savefig(
+        f"{image_folder}/shd/box-diff.svg",
+        format="svg",
+        bbox_inches="tight",
+        dpi=300,
+    )
+
+    print(
+        df.select(
+            cs.ends_with("diff").mean(),
+            cs.ends_with("diff").std().name.suffix("_std"),
+        ).unpivot(
+            on=cs.contains("_diff"),
+            index=[],
+            value_name="Value",
+            variable_name="Method",
+        )
+    )
 
 
 # print(df_base.columns)
-eval_shd(df_base)
-eval_correct_iod(df_base)
+# eval_shd(df_base)
+# eval_correct_iod(df_base)
 eval_missing_iod(df_base)
+eval_diff_iod(df_base)
