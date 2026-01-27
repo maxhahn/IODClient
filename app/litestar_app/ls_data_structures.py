@@ -91,6 +91,9 @@ class Room:
     user_results: Dict[str, List[List[int]]]
     user_labels: Dict[str, List[str]]
 
+    state_msg: str
+    test_results = None
+
 
 @dataclass
 class UserDTO:
@@ -138,6 +141,8 @@ class RoomDetailsDTO:
     private_result: List[List[int]]
     private_labels: List[str]
 
+    state_msg: str
+
     def __init__(self, room: Room, requesting_user: Union[str, None] = None):
         self.name = room.name
         self.algorithm = room.algorithm
@@ -161,6 +166,7 @@ class RoomDetailsDTO:
             if room.user_labels is not None and requesting_user in room.user_labels
             else None
         )
+        self.state_msg = room.state_msg
 
 
 @dataclass

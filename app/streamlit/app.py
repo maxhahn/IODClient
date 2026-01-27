@@ -17,6 +17,7 @@ sys.path.append(
 
 import extra_streamlit_components as stx
 import graphviz
+import numpy as np
 import pandas as pd
 import polars as pl
 import requests
@@ -187,7 +188,7 @@ def step_check_in_to_server():
 
     col2.write("Connect!")
     if (
-        col2.button(":link:", help="Connect to URL", use_container_width=True)
+        col2.button(":link:", help="Connect to URL", width="stretch")
         and server_url is not None
         and server_url != ""
     ):
@@ -248,9 +249,7 @@ def step_check_in_to_server():
             "new_username": username,
         }
 
-    button = col3.button(
-        ":arrow_heading_up:", help=button_text, use_container_width=True
-    )
+    button = col3.button(":arrow_heading_up:", help=button_text, width="stretch")
     if button:
         r = post_to_server(request_url, request_params)
         if r is None:
@@ -277,7 +276,8 @@ def step_check_in_to_server():
 
             client_port = random.randint(16016, 16096)  # 16016
             client = fedci.ProxyClient(
-                pl.from_pandas(st.session_state["uploaded_data"])
+                st.session_state["username"],
+                pl.from_pandas(st.session_state["uploaded_data"]),
             )
             client_thread = threading.Thread(
                 target=client.start, args=(client_port,), daemon=True
@@ -335,13 +335,13 @@ def step_upload_data():
     do_reload_data = col2.button(
         ":recycle:",
         help="Reload data from disk",
-        use_container_width=True,
+        width="stretch",
     )
 
     if col3.button(
         ":wastebasket:",
         help="Remove all local data. THIS INCLUDES PROCESSED DATA AND PAGs.",
-        use_container_width=True,
+        width="stretch",
     ):
         shutil.rmtree(client_base_dir)
         st.rerun()
@@ -389,7 +389,7 @@ def step_upload_data():
     if st.session_state["uploaded_data"] is not None:
         df = st.session_state["uploaded_data"]
         with st.expander("View Data"):
-            st.dataframe(dataframe_explorer(df), use_container_width=True)
+            st.dataframe(dataframe_explorer(df), width="stretch")
         dtypes = ["continuous", "ordinal", "multinomial", "binomial"]
         dtype_mapping = {
             pl.Float32: dtypes[0],
@@ -465,12 +465,13 @@ def iod_r_call(dfs, client_labels, alpha=0.05, procedure="original"):
         for df in dfs:
             print(df)
         result = aggregate_ci_results_f(label_list, r_dfs, alpha, procedure)
-        print(result.keys())
         print("aggregate_ci_results_f", "2")
-        g_pag_list = [x[1].tolist() for x in result["G_PAG_List"].items()]
+        g_pag_list = [x.value for x in result.getbyname("G_PAG_List").items()]
         g_pag_labels = [
-            list([str(a) for a in x[1]]) for x in result["G_PAG_Label_List"].items()
+            list([str(a) for a in x.value])
+            for x in result.getbyname("G_PAG_Label_List").items()
         ]
+        g_pag_list = [np.array(pag).astype(int).tolist() for pag in g_pag_list]
         print(g_pag_list)
         print(g_pag_labels)
         # Clear workspace
@@ -501,7 +502,7 @@ def run_local_fci():
 
 
 def get_pvals_fedci(df, max_conditioning_set_cardinality, fileid, filename):
-    server = fedci.Server({"1": fedci.Client(pl.from_pandas(df))})
+    server = fedci.Server([fedci.Client("1", pl.from_pandas(df))])
     test_results = server.run(max_cond_size=max_conditioning_set_cardinality)
 
     all_labels = sorted(list(server.schema.keys()))
@@ -518,7 +519,7 @@ def get_pvals_fedci(df, max_conditioning_set_cardinality, fileid, filename):
                 all_labels.index(test.v0) + 1,
                 all_labels.index(test.v1) + 1,
                 s_labels_string,
-                test.p_val,
+                test.p_value,
             )
         )
 
@@ -533,6 +534,8 @@ def get_pvals_r(df, max_conditioning_set_cardinality, fileid, filename):
         run_ci_test_f = ro.globalenv["run_ci_test"]
         # converting it into r object for passing into r function
         print("run_ci_test_f", "0")
+        print(df)
+        df.index += 1
         df_r = ro.conversion.get_conversion().py2rpy(df)
         # Invoking the R function and getting the result
         print("run_ci_test_f", "1")
@@ -541,8 +544,10 @@ def get_pvals_r(df, max_conditioning_set_cardinality, fileid, filename):
         )
         print("run_ci_test_f", "2")
         # Converting it back to a pandas dataframe.
-        df_pvals = ro.conversion.get_conversion().rpy2py(result["citestResults"])
-        labels = list(result["labels"])
+        df_pvals = ro.conversion.get_conversion().rpy2py(
+            result.getbyname("citestResults")
+        )
+        labels = list(result.getbyname("labels"))
         print("run_ci_test_f", "3")
         # Clear workspace
         ro.r("rm(list = ls())")
@@ -569,14 +574,14 @@ def step_process_data():
         ":wastebasket:",
         help="Delete current progress, so that data can be reprocessed from scratch",
         disabled=not os.path.exists(f"{ci_result_dir}/{filename}"),
-        use_container_width=True,
+        width="stretch",
     ):
         os.remove(f"{ci_result_dir}/{filename}")
         st.session_state["result_pvals"] = None
         st.rerun()
         return
 
-    if col1.button("Process Data!", use_container_width=True):
+    if col1.button("Process Data!", width="stretch"):
         max_conditioning_set_cardinality = st.session_state[
             "max_conditioning_set_cardinality"
         ]
@@ -597,7 +602,7 @@ def step_process_data():
         "Submit Data!",
         help="Submit Data to Server",
         disabled=st.session_state["result_pvals"] is None,
-        use_container_width=True,
+        width="stretch",
     ):
         df_pvals = st.session_state["result_pvals"]
         schema = st.session_state["data_schema"]
@@ -662,7 +667,7 @@ def step_process_data():
                     sorted([labels[int(xi) - 1] for xi in x.split(",") if xi != ""])
                 )
             )
-            st.dataframe(dataframe_explorer(df_pvals), use_container_width=True)
+            st.dataframe(dataframe_explorer(df_pvals), width="stretch")
         with tab2:
 
             def change_local_alpha_value():
@@ -692,7 +697,7 @@ def step_process_data():
                     data=pag.pipe(format="png"),
                     file_name=f"local-pag-{fileid}.png",
                     mime="image/png",
-                    use_container_width=True,
+                    width="stretch",
                 )
                 col1.graphviz_chart(pag)
 
@@ -719,7 +724,7 @@ def room_creation_password_dialog(room_name):
     )
     _, col1 = st.columns((6, 1))
     if col1.button(
-        ":arrow_right:", help="Continue with chosen password", use_container_width=True
+        ":arrow_right:", help="Continue with chosen password", width="stretch"
     ):
         if len(password) == 0:
             password = None
@@ -754,7 +759,7 @@ def room_join_password_dialog(room_name):
     password = st.text_input("Please enter the password:")
     _, col1 = st.columns((6, 1))
     if col1.button(
-        ":arrow_right:", help="Continue with chosen password", use_container_width=True
+        ":arrow_right:", help="Continue with chosen password", width="stretch"
     ):
         if len(password) == 0:
             password = None
@@ -889,18 +894,8 @@ def step_show_room_details():
 
     st.write(f"<sup>Room protocol: {room['algorithm']}<sup>", unsafe_allow_html=True)
     if room["algorithm"] == env.Algorithm.FEDCI and room["is_processing"]:
-        current_x_labels = sorted(
-            list(
-                set(
-                    [
-                        l.split("__cat__")[0].split("__ord__")[0]
-                        for l in room["algorithm_info"]["X_labels"]
-                    ]
-                )
-            )
-        )
         st.write(
-            f"<sup>Currently running: {room['algorithm_info']['y_label']} ~ {','.join(current_x_labels + ['1'])}<sup>",
+            f"<sup>{room['state_msg']}<sup>",
             unsafe_allow_html=True,
         )
     # spinner_placeholder = st.empty()
@@ -908,7 +903,7 @@ def step_show_room_details():
     _, col1, col2, col3, col4, col5, _ = st.columns((1, 1, 1, 1, 1, 1, 1))
 
     if col1.button(
-        ":arrows_counterclockwise:", help="Refresh the room", use_container_width=True
+        ":arrows_counterclockwise:", help="Refresh the room", width="stretch"
     ):
         st.session_state["do_autorefresh"] = True
         st.rerun()
@@ -925,7 +920,7 @@ def step_show_room_details():
         lock_button_text,
         help=lock_button_help_text,
         disabled=st.session_state["username"] != room["owner_name"],
-        use_container_width=True,
+        width="stretch",
     ):
         lock_endpoint = "unlock" if room["is_locked"] else "lock"
         r = post_to_server(
@@ -944,7 +939,7 @@ def step_show_room_details():
         st.error(f"An error occured while trying to {lock_endpoint} the room")
 
     if room["is_hidden"]:
-        hide_button_text = ":face_in_clouds:"
+        hide_button_text = ":cloud:"
         hide_button_help_text = "Reveal the room"
     else:
         hide_button_text = ":eyes:"
@@ -954,7 +949,7 @@ def step_show_room_details():
         hide_button_text,
         help=hide_button_help_text,
         disabled=st.session_state["username"] != room["owner_name"],
-        use_container_width=True,
+        width="stretch",
     ):
         hide_endpoint = "reveal" if room["is_hidden"] else "hide"
         r = post_to_server(
@@ -972,7 +967,7 @@ def step_show_room_details():
             return
         st.error(f"An error occured while trying to {hide_endpoint} the room")
 
-    if col4.button(":arrow_left:", help="Leave the room", use_container_width=True):
+    if col4.button(":arrow_left:", help="Leave the room", width="stretch"):
         r = post_to_server(
             url=f"{st.session_state['server_url']}/rooms/{room['name']}/leave",
             payload={
@@ -993,7 +988,7 @@ def step_show_room_details():
         ":fire:",
         help="Run IOD on participant data",
         disabled=st.session_state["username"] != room["owner_name"],
-        use_container_width=True,
+        width="stretch",
     ):
         r = post_to_server(
             url=f"{st.session_state['server_url']}/run/{room['name']}",
@@ -1029,6 +1024,7 @@ def step_show_room_details():
         key="alpha_value",
         format="%.2f",
         on_change=change_alpha_value,
+        disabled=st.session_state["username"] != room["owner_name"],
     )
     if room["algorithm"] == env.Algorithm.FEDCI:
 
@@ -1040,11 +1036,12 @@ def step_show_room_details():
         col2.number_input(
             "Select max conditioning set size:",
             value=st.session_state["_max_conditioning_set"],
-            min_value=1,
+            min_value=0,
             max_value=999,
             step=1,
             key="max_conditioning_set",
             on_change=change_max_conditioning_set,
+            disabled=st.session_state["username"] != room["owner_name"],
         )
     st.empty()
 
@@ -1087,7 +1084,7 @@ def step_show_room_details():
                 help="Kick",
                 disabled=st.session_state["username"] != room["owner_name"],
                 key=f"kick-button-{i}",
-                use_container_width=True,
+                width="stretch",
             ):
                 r = post_to_server(
                     url=f"{st.session_state['server_url']}/rooms/{room['name']}/kick/{user}",
@@ -1104,11 +1101,11 @@ def step_show_room_details():
                     return
                 st.error(f"Failed to kick user")
 
-    if room["algorithm"] == env.Algorithm.FEDCI and room["is_processing"]:
-        fedglm_status = room["algorithm_info"]
-        if fedglm_status is None:
-            raise Exception("FEDCI STATUS CANNOT BE NONE IF ROOM IS PROCESSING")
-        provide_fedglm_data(room, fedglm_status)
+    # if room["algorithm"] == env.Algorithm.FEDCI and room["is_processing"]:
+    #     fedglm_status = room["algorithm_info"]
+    #     if fedglm_status is None:
+    #         raise Exception("FEDCI STATUS CANNOT BE NONE IF ROOM IS PROCESSING")
+    #     provide_fedglm_data(room, fedglm_status)
 
     return
 
@@ -1143,6 +1140,7 @@ def data2graph(data, labels):
                     labels[j],
                     arrowtail=arrow_type_lookup[arrtail],
                     arrowhead=arrow_type_lookup[arrhead],
+                    dir="both",
                 )
             elif data[i][j] == 3:
                 graph.edge(
@@ -1157,6 +1155,10 @@ def data2graph(data, labels):
 
 def step_view_results():
     room = st.session_state["current_room"]
+    import pickle
+
+    with open("test.pkl", "wb") as f:
+        pickle.dump(room["result"], f)
     result_graphs = [
         data2graph(d, l) for d, l in zip(room["result"], room["result_labels"])
     ]
@@ -1173,7 +1175,7 @@ def step_view_results():
                 data=private_result_graph.pipe(format="png"),
                 file_name="federated-private-pag.png",
                 mime="image/png",
-                use_container_width=True,
+                width="stretch",
             )
             col1.graphviz_chart(private_result_graph)
     else:
@@ -1194,7 +1196,7 @@ def step_view_results():
             data=zip_buffer,
             file_name=f"federated-pags.zip",
             mime="application/x-zip",
-            use_container_width=True,
+            width="stretch",
         )
         cols = st.columns((1, 1, 1))
         if len(result_graphs) == 0:
@@ -1207,7 +1209,7 @@ def step_view_results():
                 data=g.pipe(format="png"),
                 file_name=f"federated-pag-{i}.png",
                 mime="image/png",
-                use_container_width=True,
+                width="stretch",
             )
             cols[i % 3].graphviz_chart(g)
             cols[i % 3].write("---")
@@ -1224,15 +1226,14 @@ def step_view_results():
 
 
 def main():
-    st.write("# Welcome to {Some App}")
-
+    st.write("# Welcome to the fedCI-IOD App")
     col1, col2, _ = st.columns((1, 1, 3))
     col1.write(
         "<sup>View our paper [here](https://www.google.com)</sup>",
         unsafe_allow_html=True,
     )
     col2.write(
-        "<sup>View our GitHub [here](https://www.google.com)</sup>",
+        "<sup>View our GitHub [here](https://github.com/maxhahn/IODClient)</sup>",
         unsafe_allow_html=True,
     )
 

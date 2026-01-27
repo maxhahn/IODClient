@@ -5,6 +5,7 @@ from typing import Optional
 from litestar import MediaType, Response, get, post
 from litestar.controller import Controller
 from litestar.exceptions import HTTPException
+from litestar_app.ls_runner import AlgorithmController
 from ls_data_structures import (
     BasicRequest,
     JoinRoomRequest,
@@ -56,6 +57,12 @@ class RoomController(Controller):
         if data.username not in room.users:
             raise HTTPException(detail="You are not in this room", status_code=403)
 
+        # hacky fix for R that is not being executed in main thread
+        if room.test_results is not None and room.result is None:
+            AlgorithmController.run_fedci_iod_on_test_results(
+                room_name, room.test_results, 0.05
+            )
+
         return Response(
             media_type=MediaType.JSON,
             content=RoomDetailsDTO(room, data.username),
@@ -103,6 +110,7 @@ class RoomController(Controller):
             result_labels=None,
             user_results={},
             user_labels={},
+            state_msg="",
         )
 
         rooms[new_room_name] = room

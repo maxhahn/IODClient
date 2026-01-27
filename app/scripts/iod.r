@@ -9,19 +9,27 @@ library(gtools)
 library(rIOD)
 
 run_ci_test <- function(data, max_cond_set_cardinality, filedir, filename) {
-
-  data[] <- lapply(data, function(x) if (is.character(x)) as.factor(x) else x)
-
+  data[] <- lapply(data, function(col) {
+      if (is.integer(col)) {
+          factor(col, levels = sort(unique(col)), ordered = TRUE)
+      } else if (is.character(col)) {
+          factor(col, levels = sort(unique(col)), ordered = FALSE)
+      } else {
+          col
+      }
+  })
   labels <- colnames(data)
   indepTest <- mixedCITest
   suffStat <- getMixedCISuffStat(dat = data,
                                  vars_names = labels,
                                  covs_names = c())
+
+  suffStat$verbose <- TRUE
   citestResults <- getAllCITestResults(data,
                                       indepTest,
                                       suffStat,
                                       m.max=max_cond_set_cardinality,
-                                      saveFiles=TRUE,
+                                      saveFiles=FALSE,
                                       fileid=filename,
                                       citestResults_folder=filedir)
   result <- list(citestResults=citestResults, labels=labels)
