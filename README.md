@@ -49,26 +49,23 @@ As such, data privacy is preserved.
 
 ## Setup
 
-First, install docker and docker-compose.
+First, install docker or an alternative like podman.
 
-Use the following commands to build and run the application:
+Pull the image:
+`docker pull docker.io/maximilianhahn/fedci-iod-app:0.0.1`
 
-* Run client and server on same machine:
-`docker-compose up`
+Then run the container:
+`docker run --rm -it -p 8501:8501 -e MODE=HYBRID docker.io/maximilianhahn/fedci-iod-app:0.0.1`
 
-* Run client or server only:
-`docker-compuse up client`
-`docker-compose up server`
 
-* The client can be accessed via `localhost:8081` on the host machine.
-When hosting the client on a machine within the same network, use it's ip address and ensure proper connectivity between the two machines.
+Modes `CLIENT` and `HYBRID` start streamlit server on port `8501`, which is exposed via the `-p` flag to localhost, therefore allowing access from the local browser under `localhost:8501`.  
+Modes `SERVER` and `HYBRID` start a litestar server, running the backend and managing clients. The server runs on port `8000` by default.  
 
-* The first step within the client is to connect to a server.
-A server hosted by us can be used with the following URL: `heiderlab.com:8080`
+Network connectivity between separate containers, one running as a server and others running as clients requires proper setup and potential docker networking.  
+Since no https is supported, you may consider utilizing reverse proxies to encrypt transferred data.
 
-## Configuration
+## Known Issues
 
-No major changes of this setup should be required.
-All configurations can be changed in `docker-compose.yml`.
-
-The only reasonable change is the port mapping, if your host machine requires specific ports to be exposed.
+- Since R requires to be run on the main thread in a lot of circumstances, there can be issues with R code execution on client site, since streamlit delegates threading. This is fixed for fedCI, but meta-analysis may face problems.
+- The app can become unstable after long periods of running and multiple user actions, therefore restarts may be required.
+- Streamlit components sometimes lose their state, for example, showing the wrong step indicator, although the page loads correctly.

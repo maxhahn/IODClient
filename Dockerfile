@@ -1,85 +1,68 @@
 # Dockerfile
-FROM docker.io/rocker/r-ver:4.4.0
+FROM condaforge/miniforge3:latest
 
-# System dependencies for R packages and rpy2
-RUN apt-get update && apt-get install -y \
-    libxml2-dev \
-    libcurl4-openssl-dev \
-    libssl-dev \
-    libgraphviz-dev \
-    python3-pip \
-    python3-dev \
-    build-essential \
+RUN conda config --add channels bioconda
+
+RUN mamba install -y r-base=4.4.0
+RUN mamba install -y r-energy r-rsvg
+
+RUN mamba install \
+    -c conda-forge -c bioconda \
+    r-essentials \
+    r-devtools \
+    r-remotes \
+    r-biocmanager \
     graphviz \
-    libpcre2-dev \
-    liblzma-dev \
-    libbz2-dev \
-    libicu-dev \
-    libtirpc-dev \
-    r-base-dev \
-    librsvg2-dev \
-    libcairo2-dev \
-    libgmp-dev \
-    libmpfr-dev \
-    libgsl-dev \
-    cmake \
-    nano \
-    && rm -rf /var/lib/apt/lists/*
+    gmp \
+    mpfr \
+    libxml2 \
+    openssl \
+    pkg-config \
+    -y
 
-# Install BiocManager and its dependencies first
-RUN R -e "install.packages(c('BiocManager', 'devtools'), repos='http://cran.rstudio.com/')"
+RUN mamba install -c conda-forge \
+    r-ggm \
+    r-sfsmisc \
+    r-abind \
+    r-corpcor \
+    r-rmpfr \
+    r-v8 \
+    r-doparallel \
+    r-survival \
+    r-mass \
+    r-ordinal \
+    r-geepack \
+    r-coxme \
+    r-rfast \
+    r-bigmemory \
+    r-hmisc \
+    r-dagitty \
+    -y
 
-# Install Bioconductor packages
-RUN R -e "BiocManager::install(c('graph', 'Rgraphviz', 'RBGL'), ask=FALSE)"
+RUN mamba install -c bioconda -c conda-forge \
+    bioconductor-graph \
+    bioconductor-rgraphviz \
+    bioconductor-rbgl \
+    -y
 
-# Install base dependencies first
-RUN R -e "\
-    install.packages(c('ggm', 'sfsmisc', 'gmp', 'abind', 'corpcor', 'Rmpfr', 'V8'), \
-    repos='http://cran.rstudio.com/', \
-    dependencies=TRUE)"
+RUN mamba install -y r-pscl r-dot r-matrixcalc r-doFuture r-lme4 r-rje r-gtools r-visnetwork r-quantreg
 
-# Install pcalg and its dependencies
-RUN R -e "\
-    install.packages('pcalg', \
-    repos='http://cran.rstudio.com/', \
-    dependencies=TRUE)"
+RUN mamba install -y python-devtools gcc
 
-# Install rsvg and MXM with dependencies
-RUN R -e "\
-    install.packages(c('rsvg', 'MXM'), \
-    repos='http://cran.rstudio.com/', \
-    dependencies=TRUE)"
+RUN R -e "install.packages('relations', repos='http://cran.rstudio.com/')"
+RUN R -e "install.packages('pcalg', repos='http://cran.rstudio.com/')"
+RUN R -e "install.packages('Rfast2', repos='http://cran.rstudio.com/')"
+#R -e "install.packages('dagitty', repos='http://cran.rstudio.com/')"
 
-# Install remaining R packages from requirements.r
-COPY requirements.r /tmp/requirements.r
-RUN R -e "packages <- readLines('/tmp/requirements.r'); \
-    installed_packages <- installed.packages()[,'Package']; \
-    packages <- setdiff(packages, installed_packages); \
-    if(length(packages) > 0) { \
-    install.packages(packages, \
-    repos='http://cran.rstudio.com/', \
-    dependencies=TRUE) \
-    }"
+RUN R -e "remotes::install_github('IyarLin/simMixedDAG')"
+RUN R -e "remotes::install_github('cran/BFF')"
 
-COPY install_mxm.r /tmp/install_mxm.r
-RUN Rscript /tmp/install_mxm.r
+COPY imports /r-imports
 
-# Install Python dependencies
-RUN python3 -m pip install --upgrade pip setuptools wheel
-COPY requirements.txt /tmp/requirements.txt
-RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
 
-# Copy project data
-COPY ./imports /r-imports
-WORKDIR /r-imports
-
-# Install FCI Utils
+RUN R CMD INSTALL /r-imports/MXM_1.5.5.tar.gz
 RUN R CMD INSTALL /r-imports/FCI.Utils_1.0.tar.gz
-# Install rIOD
 RUN R CMD INSTALL /r-imports/rIOD_1.0.tar.gz
-
-WORKDIR /
-RUN rm -r /r-imports
 
 # ,------.            ,--.  ,--.                        ,------.               ,--.
 # |  .--. ',--. ,--.,-'  '-.|  ,---.  ,---. ,--,--,     |  .--. ' ,--,--. ,---.|  |,-. ,--,--. ,---.  ,---.  ,---.
@@ -88,12 +71,18 @@ RUN rm -r /r-imports
 # `--'     .-'  /     `--'  `--' `--' `---' `--''--'    `--'      `--`--' `---'`--'`--'`--`--'.`-  /  `----'`----'
 #          `---'                                                                              `---'
 
-COPY ./app /app
-WORKDIR /app
 
 # More Python packages
 RUN pip install pandas polars graphviz rpy2 litestar[standard] streamlit extra-streamlit-components streamlit-extras streamlit-autorefresh
 RUN pip install statsmodels scipy rpyc
+
+EXPOSE 8501
+EXPOSE 8000
+
+COPY ./app /app
+WORKDIR /app
+
+COPY fedci /fedci
 
 # make startup script executable
 RUN chmod +x startup.sh
