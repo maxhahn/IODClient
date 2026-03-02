@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+from functools import wraps
 from typing import List, Optional
 
 import rpyc
@@ -10,9 +12,35 @@ from fedci.utils import (
 )
 
 from .client import Client
-from .env import get_env_additive_masking, get_env_debug, get_env_fit_intercept, get_env_client_heterogeniety
+from .env import (
+    get_env_additive_masking,
+    get_env_client_heterogeniety,
+    get_env_debug,
+    get_env_fit_intercept,
+)
 from .testing import TestEngine
 from .utils import BetaUpdateData, client_colname
+
+
+def reporting(test_func):
+    @wraps(test_func)
+    def wrapper(self, *args, **kwargs):
+        if hasattr(self, "test_start_callback") and callable(self.test_start_callback):
+            self.test_start_callback(*args, **kwargs)
+
+        test_result = test_func(self, *args, **kwargs)
+
+        if hasattr(self, "test_completion_callback") and callable(
+            self.test_completion_callback
+        ):
+            self.test_completion_callback(test_result)
+        return test_result
+
+    return wrapper
+
+
+def call_client(client, required_vars, betas):
+    return client.compute(required_vars, betas)
 
 
 class Server:
@@ -23,9 +51,13 @@ class Server:
         max_regressors: Optional[int] = None,
         convergence_threshold: Optional[float] = 1e-5,
         max_iterations: Optional[int] = 25,
+        test_start_callback=None,
+        test_completion_callback=None,
         _network_fetch_function=lambda x: x,
     ):
         self._network_fetch_function = _network_fetch_function
+        self.test_start_callback = test_start_callback
+        self.test_completion_callback = test_completion_callback
         self.clients = {client.get_id(): client for client in clients}
         assert len(self.clients) == len(clients), "Some Client IDs were duplicated"
 
@@ -113,13 +145,14 @@ class Server:
             max_iterations=max_iterations,
         )
 
+    @reporting
     def test(self, x: str, y: str, s: List[str]):
-        if get_env_client_heterogeniety()==2 and client_colname in [x,y]:
+        if get_env_client_heterogeniety() == 2 and client_colname in [x, y]:
             return None
         if x > y:
             x, y = y, x
 
-        if get_env_client_heterogeniety()==2:
+        if get_env_client_heterogeniety() == 2:
             s.append(client_colname)
             s = sorted(s)
 
@@ -133,14 +166,22 @@ class Server:
                 for client in clients:
                     client.exchange_masks(betas)
             updates = []
-            for client in clients:
-                update = client.compute(required_vars, betas)
-                update = self._network_fetch_function(update)
-                update = {
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                _updates = list(
+                    executor.map(
+                        call_client,
+                        clients,
+                        [required_vars] * len(clients),
+                        [betas] * len(clients),
+                    )
+                )
+            for _update in _updates:
+                _update = self._network_fetch_function(_update)
+                _update = {
                     k: BetaUpdateData(**v) if type(v) is dict else v
-                    for k, v in update.items()
+                    for k, v in _update.items()
                 }
-                updates.append(update)
+                updates.append(_update)
 
             self.test_engine.update_parameters(updates)
         if get_env_debug() > 0:
@@ -154,7 +195,9 @@ class Server:
                 for _beta in beta.tolist():
                     print(_beta)
         result = self.test_engine.get_result()
-        if result.iterations <= 1:
+        if result.get_iterations() <= 0:
+            # print('FILTERING OUT:')
+            # print(result, result.get_iterations())
             return None
         return result
 
@@ -168,7 +211,7 @@ class Server:
             if max_cond_size is None:
                 max_cond_size = len(variables) - 2
 
-            if get_env_client_heterogeniety()==2:
+            if get_env_client_heterogeniety() == 2:
                 variables = variables - {client_colname}
             for y_var in variables:
                 variables_without_y = variables - {y_var}
@@ -183,6 +226,7 @@ class Server:
                     for cond_set in powerset_of_regressors:
                         cond_set = list(cond_set)
                         possible_tests.append((y_var, x_var, cond_set))
+            possible_tests = sorted(possible_tests)
             return possible_tests
 
         all_possible_tests = get_all_possible_tests(self.schema.keys(), max_cond_size)
@@ -208,6 +252,8 @@ class ProxyServerBuilder:
         self.cls = cls
         self.max_iterations = 25
         self.schema = None
+        self.test_start_callback = None
+        self.test_completion_callback = None
 
     def set_schema(self, schema):
         self.schema = schema
@@ -226,11 +272,19 @@ class ProxyServerBuilder:
         self.clients.append(client)
         return self
 
+    def set_test_start_callback(self, callback):
+        self.test_start_callback = callback
+
+    def set_test_completion_callback(self, callback):
+        self.test_completion_callback = callback
+
     def build(self):
         return self.cls(
             self.clients,
             schema=self.schema,
             max_iterations=self.max_iterations,
+            test_start_callback=self.test_start_callback,
+            test_completion_callback=self.test_completion_callback,
         )
 
 
@@ -239,13 +293,22 @@ class ProxyServer:
     def builder(cls, **kwargs):
         return ProxyServerBuilder(cls, **kwargs)
 
-    def __init__(self, clients, schema, max_iterations):
+    def __init__(
+        self,
+        clients,
+        schema,
+        max_iterations,
+        test_start_callback,
+        test_completion_callback,
+    ):
         self.clients = [c.root for c in clients]
         self.server = Server(
             self.clients,
             schema=schema,
             max_iterations=max_iterations,
             _network_fetch_function=rpyc.classic.obtain,
+            test_start_callback=test_start_callback,
+            test_completion_callback=test_completion_callback,
         )
 
     def __getattr__(self, name):

@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import rpy2.rinterface as ri
 import rpy2.robjects as ro
+import scipy
 from litestar import MediaType, Response, background_tasks, get, post
 from litestar.controller import Controller
 from litestar.exceptions import HTTPException
@@ -38,6 +39,13 @@ def _set_state_on_test_start(room_name, *args, **kwargs):
     if len(s) > 0:
         state_msg += f" given {','.join(sorted(list(s)))}"
     room.state_msg = state_msg
+    rooms[room_name] = room
+    return
+
+
+def _increase_completed_tests(room_name, *args, **kwargs):
+    room: Room = rooms[room_name]
+    room.completed_tests += 1
     rooms[room_name] = room
     return
 
@@ -183,7 +191,9 @@ class AlgorithmController(Controller):
                 )
 
         room_callback = partial(_set_state_on_test_start, room_name)
+        test_completion_callback = partial(_increase_completed_tests, room_name)
         server.set_test_start_callback(room_callback)
+        server.set_test_completion_callback(test_completion_callback)
         server = server.build()
 
         room.state_msg = "Running fedCI"
@@ -251,7 +261,7 @@ class AlgorithmController(Controller):
             )
         if room_name not in rooms:
             raise HTTPException(detail="The room does not exist", status_code=404)
-        room = rooms[room_name]
+        room: Room = rooms[room_name]
 
         # this is safe because, usernames are unique by nature and validate_user_request verifies correctness of id-username match
         if room.owner_name != data.username:
@@ -264,6 +274,16 @@ class AlgorithmController(Controller):
         room.is_locked = True
         room.is_hidden = True
         room.state_msg = f"Starting server-side processing"
+
+        total_vars = set.union(
+            *[set(v.keys()) for v in room.user_provided_schema.values()]
+        )
+        total_tests = scipy.special.comb(len(total_vars), 2) * 2 ** (
+            min([len(total_vars) - 2, data.max_conditioning_set])
+        )
+        room.total_tests = total_tests
+        room.completed_tests = 0
+
         rooms[room_name] = room
 
         # ToDo change behavior based on room type:

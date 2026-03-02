@@ -1,0 +1,10 @@
+digraph graphname {node [shape = oval];
+A [label= A ]
+B [label= B ]
+X [label= X ]
+Y [label= Y ]
+A -> B [color=black, dir=both,arrowhead=normal, arrowtail=normal];
+A -> X [color=black, dir=both,arrowhead=odot, arrowtail=normal];
+A -> Y [color=black, dir=both,arrowhead=normal, arrowtail=none];
+B -> Y [color=black, dir=both,arrowhead=normal, arrowtail=normal];
+}

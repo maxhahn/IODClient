@@ -49,51 +49,17 @@ alpha = 0.05
 # df_base = pl.concat(dfs, how="vertical_relaxed")
 
 
-df_base = pl.read_parquet("simulations/*.parquet")
+df_base = pl.read_parquet("simulations/final-data.parquet")
 
-####
-# FILTER OUT ALL IMPOSSIBLE TESTS (are auto filtered in updated code, but this supports old files)
-df_base = df_base.with_columns(
-    non_global_vars=pl.col("vars1").list.set_symmetric_difference(pl.col("vars2"))
-)
-df_base = df_base.filter(
-    (
-        pl.col("S").str.replace_all(
-            ",",
-            "",
-        )
-        + pl.col("X")
-        + pl.col("Y")
-    )
-    .str.split("")
-    .list.set_intersection(pl.col("non_global_vars"))
-    .list.len()
-    < 2
-)
-####
+print(df_base.select(pl.col("pag_id", "seed", "num_samples", "partitions").n_unique()))
+print(df_base.group_by(pl.col("pag_id")).len().sort("len"))
+
+print("30 runs only", len(df_base))
+print(df_base.select(pl.col("pag_id", "seed", "num_samples", "partitions").n_unique()))
+print(df_base.group_by("seed", "pag_id", "num_samples", "partitions").len().sort("len"))
 
 print("== Perc of nulls in pooled")
 print(df_base.select(cs.contains("pvalue").null_count() / len(df_base)))
-
-
-df_sample_errors = (
-    df_base.filter(
-        pl.col("pooled_pvalue")
-        .is_null()
-        .any()
-        .over("pag_id", "seed", "num_samples", "partitions")
-    )
-    .select("pag_id", "seed", "num_samples", "partitions")
-    .unique()
-)
-print("== SAMPLE ERRORS ==")
-print(df_sample_errors)
-
-# df_base = df_base.filter(pl.col("pooled_pvalue").is_not_null())
-
-df_base = df_base.join(
-    df_sample_errors, on=["pag_id", "seed", "num_samples", "partitions"], how="anti"
-)
 
 df_base = df_base.with_columns(
     max_norm=pl.max_horizontal(
@@ -106,9 +72,14 @@ df_base = df_base.with_columns(
     )
 )
 
-print("Before Null Drop", len(df_base))
-df_base = df_base.drop_nulls()
-print("After Null Drop", len(df_base))
+
+df_base = df_base.rename({"fedci_shds_og_right": "fedci_local_shds_og"})
+
+print(
+    "Total number of sims",
+    len(df_base.select("seed", "pag_id", "num_samples", "partitions").unique()),
+)
+print(df_base.group_by("seed", "pag_id", "num_samples", "partitions").len().sort("len"))
 
 
 def eval_shd(df):
@@ -125,7 +96,6 @@ def eval_shd(df):
         )
         return df
 
-    df = df.rename({"fedci_shds_og_right": "fedci_local_shds_og"})
     df = get_shd_stats(df, "pooled_shds_og")
     df = get_shd_stats(df, "fisher_shds_og")
     df = get_shd_stats(df, "fedci_shds_og")
@@ -249,6 +219,15 @@ def eval_missing_iod(df):
         )
     )
 
+    print(
+        df.group_by(cs.ends_with("_missing_pred"))
+        .agg(cs.contains("shds_og").list.min().mean())
+        .sort(
+            pl.col("fisher_shds_og_missing_pred"),
+            cs.ends_with("_missing_pred") - cs.by_name("fisher_shds_og_missing_pred"),
+        )
+    )
+
 
 def eval_diff_iod(df):
     if NORM_SHD:
@@ -258,14 +237,14 @@ def eval_diff_iod(df):
     # df = df.with_columns(cs.ends_with("_min").fill_null(1))
     df = df.with_columns(
         fedci_pooled_diff=pl.col("fedci_shds_og_min") - pl.col("pooled_shds_og_min"),
-        fedci_ca_pooled_diff=pl.col("fedci_shds_og_right_min")
+        fedci_ca_pooled_diff=pl.col("fedci_local_shds_og_min")
         - pl.col("pooled_shds_og_min"),
         fisher_pooled_diff=pl.col("fisher_shds_og_min") - pl.col("pooled_shds_og_min"),
         fisher_fedci_diff=pl.col("fisher_shds_og_min") - pl.col("fedci_shds_og_min"),
-        fedci_ca_fedci_diff=pl.col("fedci_shds_og_right_min")
+        fedci_ca_fedci_diff=pl.col("fedci_local_shds_og_min")
         - pl.col("fedci_shds_og_min"),
         fisher_fedci_ca_diff=pl.col("fisher_shds_og_min")
-        - pl.col("fedci_shds_og_right_min"),
+        - pl.col("fedci_local_shds_og_min"),
     )
 
     method_name_dict = {
@@ -322,8 +301,176 @@ def eval_diff_iod(df):
     )
 
 
+def eval_diff_significance(df):
+    if NORM_SHD:
+        df = df.with_columns(cs.contains("_shds_og").list.eval(pl.element() / 20))
+    # remove rows without predictions
+    print(len(df))
+    df = df.filter(~pl.all_horizontal(cs.contains("_shds_og").list.len() == 0))
+    print(len(df))
+
+    df = df.with_columns(cs.contains("_shds_og").list.min().name.suffix("_min"))
+    # df = (
+    #     df.group_by("num_samples", "partitions")
+    #     .agg(cs.contains("_shds_og_min").mean())
+    #     .sort("num_samples", "partitions")
+    # )
+
+    pairings = [
+        ## ("pooled", "fisher"),
+        ## ("pooled", "fedci"),
+        ("fisher", "pooled"),
+        ("fedci", "pooled"),
+        ## ("fedci", "pooled"),
+        ## ("pooled", "fedci_local"),
+        ## ("fedci", "fisher"),
+        # ("fedci_local", "pooled"),
+    ]
+
+    df = df.with_columns(
+        (pl.col(f"{a}_shds_og_min") - pl.col(f"{b}_shds_og_min")).alias(f"{a}_{b}_diff")
+        for a, b in pairings
+    )
+
+    # result = df.group_by("num_samples", "partitions").agg(
+    #     pl.map_groups(
+    #         cs.ends_with("_diff"),
+    #         t_test,
+    #         return_dtype=pl.Float64,
+    #         returns_scalar=True,
+    #     ).name.suffix("_ttest_p"),
+    #     pl.len(),
+    # )
+
+    print(
+        df.group_by("num_samples", "partitions")
+        .agg(cs.ends_with("_shds_og_min").mean())
+        .sort("num_samples", "partitions")
+    )
+    print(
+        df.group_by("num_samples", "partitions")
+        .agg(
+            [
+                (
+                    (pl.col(f"{a}_shds_og_min") - pl.col(f"{b}_shds_og_min")).mean()
+                ).alias(f"{a}_{b}_mean")
+                for a, b in pairings
+            ]
+        )
+        .sort("num_samples", "partitions")
+    )
+
+    cohen = (
+        df.group_by("num_samples", "partitions")
+        .agg(
+            [
+                (
+                    (pl.col(f"{a}_shds_og_min") - pl.col(f"{b}_shds_og_min")).mean()
+                    / (pl.col(f"{a}_shds_og_min") - pl.col(f"{b}_shds_og_min")).std()
+                ).alias(f"{a}_{b}_cohens_d")
+                for a, b in pairings
+            ]
+        )
+        .fill_nan(pl.lit(0.0))
+    )
+
+    cohen = (
+        cohen.with_columns(
+            [
+                (
+                    pl.col(f"{a}_{b}_cohens_d").abs() * 0
+                    + (1 / 10000 + pl.col(f"{a}_{b}_cohens_d") ** 2 / 20000).sqrt()
+                ).alias(f"{a}_{b}_se")
+                for a, b in pairings
+            ]
+        )
+        .with_columns(
+            [
+                (pl.col(f"{a}_{b}_cohens_d") - 1.96 * pl.col(f"{a}_{b}_se")).alias(
+                    f"{a}_{b}_ci_lower"
+                )
+                for a, b in pairings
+            ],
+        )
+        .with_columns(
+            [
+                (pl.col(f"{a}_{b}_cohens_d") + 1.96 * pl.col(f"{a}_{b}_se")).alias(
+                    f"{a}_{b}_ci_upper"
+                )
+                for a, b in pairings
+            ],
+        )
+    )
+
+    print(
+        cohen.sort("num_samples", "partitions").drop(
+            cs.contains("_upper") | cs.contains("_lower")
+        )
+    )
+    return
+
+    # equalities = df.group_by("num_samples", "partitions").agg(
+    #     [
+    #         (pl.col(f"{a}_shds_og_min") == pl.col(f"{b}_shds_og_min"))
+    #         .mean()
+    #         .alias(f"{a}_{b}_equal")
+    #         for a, b in pairings
+    #     ],
+    # )
+
+    # # --- Effect sizes to accompany Wilcoxon tests ---
+
+    # # 1) Median paired difference (robust, interpretable)
+    # effect_sizes = df.group_by("num_samples", "partitions").agg(
+    #     [
+    #         (pl.col(f"{a}_shds_og_min") - pl.col(f"{b}_shds_og_min"))
+    #         .median()
+    #         .alias(f"{a}_{b}_median_diff")
+    #         for a, b in pairings
+    #     ]
+    # )
+
+    # # 2) Probability of superiority (common-language effect size)
+    # def prob_superiority(series: pl.Series):
+    #     s = pl.Series(series).explode().drop_nulls()
+    #     if len(s) == 0:
+    #         return None
+    #     return (s < 0).mean()  # lower SHD = better
+
+    # prob_effects = df.group_by("num_samples", "partitions").agg(
+    #     [
+    #         pl.map_groups(
+    #             pl.col(f"{a}_shds_og_min") - pl.col(f"{b}_shds_og_min"),
+    #             prob_superiority,
+    #             return_dtype=pl.Float64,
+    #             returns_scalar=True,
+    #         ).alias(f"{a}_{b}_P_superiority")
+    #         for a, b in pairings
+    #     ]
+    # )
+
+    # # 3) Join with your existing Wilcoxon table
+    # # final_table = (
+    # #     result.join(effect_sizes, on=["num_samples", "partitions"])
+    # #     .join(prob_effects, on=["num_samples", "partitions"])
+    # #     .join(equalities, on=["num_samples", "partitions"])
+    # # )
+    # final_table = result
+    # pl.Config.set_tbl_cols(20)
+    # pl.Config.set_tbl_rows(120)
+    # # print(final_table.sort("num_samples", "partitions"))
+
+    # long = final_table.unpivot(
+    #     index=["num_samples", "partitions"], variable_name="key", value_name="value"
+    # )
+
+    # print(long.sort("num_samples", "partitions", "key"))
+
+
 # print(df_base.columns)
 # eval_shd(df_base)
 # eval_correct_iod(df_base)
-eval_missing_iod(df_base)
-eval_diff_iod(df_base)
+# eval_missing_iod(df_base)
+# eval_diff_iod(df_base)
+print("before diff signif", len(df_base))
+eval_diff_significance(df_base)

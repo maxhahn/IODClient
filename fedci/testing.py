@@ -3,7 +3,13 @@ from typing import Dict, List, Optional, Set, Tuple
 import numpy as np
 import scipy
 
-from .env import get_env_debug, get_env_fit_intercept, get_env_line_search, get_env_lm_damping, get_env_ridge
+from .env import (
+    get_env_debug,
+    get_env_fit_intercept,
+    get_env_line_search,
+    get_env_lm_damping,
+    get_env_ridge,
+)
 from .utils import BetaUpdateData, VariableType
 
 
@@ -24,6 +30,7 @@ class RegressionTest:
         self.num_classes, self.num_parameters = params
         self.dof = self.num_classes * self.num_parameters
         self.beta = np.zeros((self.dof, 1))
+        # self.beta = np.random.randn(self.dof, 1)
         self.alpha = 1.0
 
         self.convergence_threshold = convergence_threshold
@@ -36,7 +43,7 @@ class RegressionTest:
         self.previous_llf: float = -float("inf")
         self.llf: float = -float("inf")
         self.iterations: int = 0
-        self.reposition_count = 0
+        self.convergence_retry_count = 0
         self.lm_lambda = 1
 
     def __repr__(self):
@@ -116,74 +123,70 @@ class RegressionTest:
         return self.beta + self.alpha * ((xwx_inv @ xwz) - self.beta)
 
     def update_parameters(self, update: List[BetaUpdateData]):
+        if get_env_debug() >= 2:
+            print(f"Updating {self.response} ~ {self.predictors} - {self.iterations}")
         if self.is_finished():
             return
 
         llf = sum([_update.llf for _update in update])
         xwx = sum([_update.xwx for _update in update])
         xwz = sum([_update.xwz for _update in update])
-        n = int(sum([_update.n for _update in update]))
+        n = int(np.sum([_update.n for _update in update]).item())
 
-        # if self.response == "A" and self.predictors == {"B", "C", "E"}:
-        #     print(self.lm_lambda)
-        # if abs(self.llf - llf) > 10:
-        #    print(self.llf, llf, self.alpha, self.response, self.predictors)
+        # if self.iterations == 0 and np.allclose(xwz, np.zeros_like(xwz)):
+        #     # readjust beta -> mostly an issue with small datasets and perfectly even distribution of categories
+        #     self.beta = np.random.randn(self.dof, 1)
+        #     self.iterations += 1
+        #     return
+
         if self.response_type == VariableType.CONTINUOS and n > 0:
             rss = sum([_update.rss for _update in update])
             sigma2 = np.clip(rss / n, 1e-10, None)
             llf = -0.5 * n * np.log(2 * np.pi * sigma2) - 0.5 * n
             llf = llf.astype(np.float64).item()  # uses np.float128 for higher precision
 
-        #print(np.linalg.cond(xwx))
-
-        if get_env_line_search() and self.llf > llf:
-            # if self.response == "E" and self.predictors == {"C"}:
-            #     print(self.llf, llf)
-            # if no small step improves llf, stop fitting
-            if self.alpha <= 1e-8:
-                self.alpha = 1.0
-                if self.reposition_count >= 10:
-                    # asd
+        if self.llf > llf and (get_env_lm_damping() or get_env_line_search()):
+            if get_env_lm_damping():
+                # when no line search or when line search fails
+                if not get_env_line_search() or self.alpha <= 1e-8:
+                    # reset lm_lambda when fit is bad
+                    if self.lm_lambda <= 1:
+                        self.lm_lambda = 1
+                    # increase lambda whenever update fails
+                    if self.lm_lambda <= 1e8:
+                        self.lm_lambda *= 2
+                    # reset alpha
+                    self.alpha = 1.0
+                    self.convergence_retry_count += 1
+                    if self.convergence_retry_count > 10:
+                        self.bad_fit = True
+                        self.early_stop = True
+                        return
+            if get_env_line_search():
+                if not get_env_lm_damping() and self.alpha <= 1e-8:
                     self.bad_fit = True
                     self.early_stop = True
-                    #print('Early stop no improvement')
                     return
-                if self.lm_lambda <= 1:
-                    self.lm_lambda = 1
-                if self.lm_lambda <= 1e8:
-                    self.lm_lambda *= 2
-                self.beta = self._get_new_beta(
-                    self.previous_xwx,
-                    self.previous_xwz
-                    #+ np.random.normal(0, 1e-3, self.previous_xwz.shape),
-                )
-                self.reposition_count += 1
-                return
-            # got worse
-            # For this step, no llf is available. So check with previous llf and redo last update with new alpha
 
-            self.alpha *= 0.5
-
-            # self.iterations += 1
-            # self.max_iterations += 1
+                self.alpha *= 0.5
 
             self.beta = self._get_new_beta(self.previous_xwx, self.previous_xwz)
             return
 
+        self.convergence_retry_count = 0
+        self.alpha = 1.0
+
         self.previous_llf = self.llf
         self.llf = llf
-        self.alpha = 1.0
+
         if self.lm_lambda > 1e-12:
             self.lm_lambda /= 10
         beta = self._get_new_beta(xwx, xwz)
-        # TODO: improve with variables
-        # if alpha <1e-8 und update wird trotzdem gemacht: break, test ende
         if (
             self.iterations == 0
             and np.linalg.norm(self.beta - beta) < 1e-4
             or np.linalg.norm(self.beta - beta) < 1e-8
         ):
-            #('Early stop small step')
             self.early_stop = True
             return
         self.beta = beta
@@ -218,7 +221,6 @@ class LikelihoodRatioTest:
         self.restricted_test: RegressionTest = restricted_test
         self.unrestricted_test: RegressionTest = unrestricted_test
 
-        self.iterations = 0
         self.bad_fit = False
 
         self.p_value: Optional[float] = None
@@ -312,7 +314,9 @@ class LikelihoodRatioTest:
                     for _update in update
                 ]
             )
-        self.iterations += 1
+
+    def get_iterations(self):
+        return max([self.restricted_test.iterations, self.unrestricted_test.iterations])
 
     def _set_p_value(self):
         t0_llf = self.restricted_test.llf
@@ -347,7 +351,6 @@ class SymmetricLikelihoodRatioTest:
         self.v0 = lrt1.response
         self.v1 = lrt2.response
         self.conditioning_set = lrt1.conditioning_set
-        self.iterations = 0
         self.bad_fit = False
 
         if lrt1.response < lrt2.response:
@@ -405,16 +408,11 @@ class SymmetricLikelihoodRatioTest:
             self.lrt2.update_parameters(
                 [_update[self.lrt2.response] for _update in update]
             )
-        self.iterations += 1
+
+    def get_iterations(self):
+        return max([self.lrt1.get_iterations(), self.lrt2.get_iterations()])
 
     def _set_p_value(self):
-        # if self.lrt1.bad_fit and self.lrt2.bad_fit:
-        #     self.p_value = -1
-        # elif self.lrt1.bad_fit:
-        #     self.p_value = self.lrt2.p_value
-        # elif self.lrt2.bad_fit:
-        #     self.p_value = self.lrt1.p_value
-        # else:
         self.p_value = min(
             2 * min(self.lrt1.p_value, self.lrt2.p_value),
             max(self.lrt1.p_value, self.lrt2.p_value),

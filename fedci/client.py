@@ -100,8 +100,8 @@ class ComputationHelper:
     ):
         eta = np.zeros_like(y)
         if get_env_client_heterogeniety()==1:
-            gamma = ComputationHelper.fit_local_gamma(y=y, offset=eta, family=family)
-            eta += gamma
+            alpha = ComputationHelper.fit_local_alpha(y=y, offset=eta, family=family)
+            eta += alpha
         mu: np.ndarray = family.inverse_link(eta)
 
         llf: float = family.loglik(y, mu)
@@ -129,13 +129,13 @@ class ComputationHelper:
     ):
         eta = np.zeros_like(y)
         if get_env_client_heterogeniety()==1:
-            gamma = ComputationHelper.fit_local_gamma(y=y, offset=eta, family=family)
-            eta += gamma
+            alpha = ComputationHelper.fit_local_alpha(y=y, offset=eta, family=family)
+            eta += alpha
         else:
-            gamma = np.zeros_like(eta)
+            alpha = np.zeros_like(eta)
         mu: np.ndarray = family.inverse_link(eta)
 
-        return eta, mu, gamma
+        return eta, mu, alpha
 
     @staticmethod
     def run_prediction(
@@ -147,12 +147,12 @@ class ComputationHelper:
         eta: np.ndarray = X @ beta
 
         if get_env_client_heterogeniety()==1:
-            gamma = ComputationHelper.fit_local_gamma(y=y, offset=eta, family=family)
+            alpha = ComputationHelper.fit_local_alpha(y=y, offset=eta, family=family)
         else:
-            gamma = np.zeros_like(eta)
-        eta += gamma
+            alpha = np.zeros_like(eta)
+        eta += alpha
         mu: np.ndarray = family.inverse_link(eta)
-        return eta, mu, gamma
+        return eta, mu, alpha
 
     @staticmethod
     def get_irls_step(
@@ -160,7 +160,7 @@ class ComputationHelper:
         X: np.ndarray,
         eta: np.ndarray,
         mu: np.ndarray,
-        gamma,
+        alpha,
         family: DistributionalFamily,
     ):
         dmu_deta: np.ndarray = family.inverse_deriv(eta)
@@ -169,7 +169,7 @@ class ComputationHelper:
         var_y = np.clip(var_y, 1e-10, None)
 
         W = np.diag(((dmu_deta**2) / var_y).reshape(-1))
-        z: np.ndarray = (eta - gamma) + (y - mu) / dmu_deta
+        z: np.ndarray = (eta - alpha) + (y - mu) / dmu_deta
         # z: np.ndarray = eta + (y - mu) / dmu_deta
 
         xw = X.T @ W
@@ -184,8 +184,8 @@ class ComputationHelper:
         beta: np.ndarray,
         family: DistributionalFamily,
     ):
-        eta, mu, gamma = ComputationHelper.run_prediction(y, X, beta, family)
-        xwx, xwz = ComputationHelper.get_irls_step(y, X, eta, mu, gamma, family)
+        eta, mu, alpha = ComputationHelper.run_prediction(y, X, beta, family)
+        xwx, xwz = ComputationHelper.get_irls_step(y, X, eta, mu, alpha, family)
         llf: float = family.loglik(y, mu)
         # only use non-dummy values in rss and n for gaussian regression
         result = {"llf": llf, "xwx": xwx, "xwz": xwz, "rss": 0, "n": 0}
@@ -195,312 +195,37 @@ class ComputationHelper:
         return result
 
     @staticmethod
-    def fit_local_gamma(y, offset, family, max_iter=100, tol=1e-8):
-        """
-        Parameters
-        ----------
-        y : array (n,)
-            Response variable.
-        offset : array (n,)
-            Fixed offset added to the linear predictor.
-        family : statsmodels.genmod.families.Family
-            GLM family (Gaussian, Poisson, Binomial, etc.)
-        max_iter : int
-        tol : float
-
-        Returns
-        -------
-        gamma : float
-            Estimated intercept.
-        """
-
+    def fit_local_alpha(y, offset, family, max_iter=100, tol=1e-8):
         n = len(y)
-
-        # Design matrix: intercept only
         X = np.ones((n, 1))
 
         smfamily = fam.Gaussian() if family == Gaussian else fam.Binomial()
         model = sm.GLM(y.reshape(-1), X, family=smfamily, offset=offset.reshape(-1))
-
         res = model.fit(maxiter=max_iter, tol=tol, disp=False)
 
-        # Single intercept parameter
-        gamma = float(res.params[0])
-
-        return gamma
-
-    @staticmethod
-    def fit_local_gamma_ordinal(
-        y, offset, family, current_gamma, lr=0.3, momentum=0.1, prev_step=0.0
-    ):
-        # 1. Calculate Initial State
-        eta = current_gamma + offset
-        mu = family.inverse_link(eta)
-
-        # Safety Check: Ordinal models fail if mu hits 0 or 1
-        mu = np.clip(mu, 1e-6, 1 - 1e-6)
-
-        dmu_deta = family.inverse_deriv(eta)
-        var = family.variance(mu)
-        var = np.clip(var, 1e-8, None)
-
-        # 2. Compute Gradient (Score)
-        grad = np.sum((y - mu) * dmu_deta / var)
-
-        # 3. Compute Fisher Info (Hessian)
-        # Using a relative ridge: 1% of the average information
-        w = (dmu_deta**2) / var
-        fisher_info = np.sum(w)
-        ridge = max(1e-4, 0.01 * fisher_info)
-        fisher_info += ridge
-
-        # 4. Compute Raw Step
-        raw_step = grad / fisher_info
-
-        # --- ROBUSTNESS LAYER: Clipping ---
-        # Never allow gamma to jump more than 1.0 units in one go
-        # Large jumps in ordinal models often move mu to 0 or 1, killing the gradient
-        max_change = 1.0
-        if abs(raw_step) > max_change:
-            raw_step = np.sign(raw_step) * max_change
-
-        # 5. Apply Damping and Momentum
-        total_update = (lr * raw_step) + (momentum * prev_step)
-
-        # Final check: If the update creates NaNs, kill the update
-        if np.isnan(total_update):
-            return current_gamma, 0.0
-
-        updated_gamma = current_gamma + total_update
-
-        return updated_gamma, total_update
-
-    @staticmethod
-    def fit_local_gammax(y, offset, family, max_iter=5, tol=1e-8):
-        gamma = 0.0
-        for _ in range(max_iter):
-            eta = gamma + offset
-            mu = family.inverse_link(eta)
-            dmu_deta = family.inverse_deriv(eta)
-            var = family.variance(mu)
-            var = np.clip(var, 1e-10, None)
-
-            # Score (first derivative)
-            grad = np.sum((y - mu) * dmu_deta / var)
-
-            # Fisher information (negative expected Hessian)
-            w = (dmu_deta**2) / var
-            fisher_info = np.sum(w)
-            fisher_info = np.clip(fisher_info, 1e-10, None)
-
-            step = grad / fisher_info
-
-            if np.linalg.norm(step) < tol:
-                break
-        return gamma
-
-    @staticmethod
-    def fit_multinomial_gamma(y, offset, max_iter=100, tol=1e-8):
-        n, K_minus_1 = y.shape
-        K = K_minus_1 + 1
-
-        # Full one-hot
-        y_full = np.column_stack([1 - y.sum(axis=1), y])
-        y_cat = np.argmax(y_full, axis=1)
-
-        # Intercept-only design
-        X = np.ones((n, 1))
-
-        offset_full = np.column_stack([np.zeros(n), offset])
-
-        # offset_full = softmax(offset_full, axis=1)
-
-        model = sm.MNLogit(y_cat, X, offset=offset_full)
-
-        res = model.fit(method="newton", maxiter=max_iter, tol=tol, disp=False)
-
-        # ---- CORRECT ALIGNMENT ----
-        gamma_est = res.params[0, :]  # length = len(estimated_cats)
-        # gamma_full = np.zeros(K_minus_1)
-        gamma_full = np.full(K_minus_1, fill_value=-float("inf"))
-
-        ynames_map = res.model._ynames_map
-        del ynames_map[0]
-
-        for k, v in ynames_map.items():
-            gamma_full[int(v) - 1] = gamma_est[k - 1]
-        return gamma_full
-
-    @staticmethod
-    def fit_local_alphax(y_obs, offset, max_iter=10, tol=1e-6):
-        """
-        Fits local fixed effects (alpha) given a fixed global offset (X * beta).
-
-        Parameters:
-        - y_indices: 1D array of class labels (0 to K-1) for N observations.
-        - offset: N x (K-1) array representing the global component X * beta.
-        - num_categories: Total number of categories (K).
-        - max_iter: Maximum IRLS iterations.
-
-        Returns:
-        - alpha: Array of shape (K-1,) representing the local fixed effects.
-        """
-        N = y_obs.shape[0]
-        K_minus_1 = offset.shape[1]
-
-        # Initialize alpha at zeros
-        alpha = np.zeros(K_minus_1)
-
-        # # Convert y to one-hot encoding (excluding the reference category 0)
-        # # y_obs shape: (N, K-1)
-        # y_obs = np.zeros((N, K_minus_1))
-        # for i, val in enumerate(y_indices):
-        #     if val > 0:
-        #         y_obs[i, val-1] = 1
-
-        for iteration in range(max_iter):
-            # 1. Compute Pi (N x K)
-            # eta includes the current alpha + the global offset
-            eta = offset + alpha  # Broadcasting alpha across N rows
-
-            # Add a column of zeros for the reference category (category 0)
-            eta_full = np.hstack([np.zeros((N, 1)), eta])
-
-            # Softmax calculation
-            exp_eta = np.exp(eta_full - np.max(eta_full, axis=1, keepdims=True))
-            pi_full = exp_eta / np.clip(
-                np.sum(exp_eta, axis=1, keepdims=True), 1e-8, None
-            )
-
-            pi_full = np.clip(pi_full, 1e-6, 1 - 1e-6)
-            pi_full /= np.sum(pi_full, axis=1, keepdims=True)
-
-            # Pi for non-reference categories (N x K-1)
-            pi = pi_full[:, 1:]
-
-            # 2. Compute Score (Gradient) for alpha: shape (K-1,)
-            # Gradient is the sum of (y_obs - pi) over all observations
-            score = np.sum(y_obs - pi, axis=0)
-
-            # 3. Compute Fisher Information (Hessian)
-            # For an intercept-only model, the Hessian is the sum of the
-            # multinomial variance-covariance matrices across all N.
-            # Hessian shape: (K-1, K-1)
-
-            # Diagonal part: sum of pi_k * (1 - pi_k)
-            diag_part = np.diag(np.sum(pi * (1 - pi), axis=0))
-
-            # Off-diagonal part: - sum of pi_k * pi_j
-            off_diag_part = np.zeros((K_minus_1, K_minus_1))
-            for k in range(K_minus_1):
-                for j in range(k + 1, K_minus_1):
-                    val = -np.sum(pi[:, k] * pi[:, j])
-                    off_diag_part[k, j] = val
-                    off_diag_part[j, k] = val
-
-            hessian = diag_part + off_diag_part
-            hessian += 1e-3 * np.eye(K_minus_1)
-
-            # 4. Update alpha
-            try:
-                # step = np.linalg.solve(hessian, score)
-                step = np.linalg.solve(hessian, score)
-                alpha += step
-            except np.linalg.LinAlgError:
-                # hinv = np.linalg.pinv(hessian)
-                # step = hinv @ score
-                # alpha += step
-                # print("Singular matrix encountered. Data may be perfectly separated.")
-                break
-            # alpha -= np.mean(alpha)
-            # Check convergence
-            if np.linalg.norm(step) < tol:
-                break
-        # print(alpha)
+        alpha = float(res.params[0])
         return alpha
 
     @staticmethod
-    def fit_local_alphax(y_obs, offset, max_iter=20, tol=1e-8):
-        """
-        Profile multinomial intercepts alpha given offset = X beta.
-
-        Parameters
-        ----------
-        y_obs : (N, K-1) one-hot encoded (excluding reference)
-        offset : (N, K-1)
-        """
-
+    def fit_multinomial_alpha(y_obs, offset, max_iter=10, tol=1e-6):
         N, K_minus_1 = y_obs.shape
         alpha = np.zeros(K_minus_1)
 
-        # observed class counts
-        n_k = np.sum(y_obs, axis=0)
-
-        for _ in range(max_iter):
-            eta = offset + alpha
-            eta_full = np.hstack([np.zeros((N, 1)), eta])
-
-            exp_eta = np.exp(eta_full - np.max(eta_full, axis=1, keepdims=True))
-            pi_full = exp_eta / np.sum(exp_eta, axis=1, keepdims=True)
-
-            pi = pi_full[:, 1:]
-            mu_k = np.sum(pi, axis=0)
-
-            # fixed-point update
-            delta = np.log(np.clip(n_k, 1e-12, None)) - np.log(
-                np.clip(mu_k, 1e-12, None)
-            )
-            alpha += delta
-
-            # enforce identifiability
-            # alpha -= np.mean(alpha)
-
-            if np.linalg.norm(delta) < tol:
-                break
-        return alpha
-
-    @staticmethod
-    def fit_local_alpha(y_obs, offset, max_iter=10, tol=1e-6):
-        """
-        Fits local fixed effects (alpha) given a fixed global offset (X * beta).
-
-        Parameters:
-        - y_obs: (N, K-1) one-hot encoded responses (excluding reference category)
-        - offset: (N, K-1) global offset
-        - max_iter: maximum Fisher scoring iterations
-        - tol: convergence tolerance
-
-        Returns:
-        - alpha: (K-1,) local fixed effects
-        """
-
-        N, K_minus_1 = y_obs.shape
-        alpha = np.zeros(K_minus_1)
-
-        # --------------------------------------------------
-        # 1. Detect locally present categories
-        # --------------------------------------------------
         counts = y_obs.sum(axis=0)
         present = counts > 0
 
-        # If *no* non-reference category is present, nothing is identifiable
         if not np.any(present):
             return alpha
 
-        # Optional: approximate -inf for absent categories
         NEG_INF = -float("inf")  # -3000.0
         alpha[~present] = NEG_INF
 
-        # Work only on present categories
         idx = np.where(present)[0]
         y_obs_p = y_obs[:, idx]
         offset_p = offset[:, idx]
         alpha_p = alpha[idx]
 
         for _ in range(max_iter):
-            # --------------------------------------------------
-            # 2. Linear predictors
-            # --------------------------------------------------
             eta_p = offset_p + alpha_p
             eta_full = np.hstack(
                 [
@@ -509,23 +234,12 @@ class ComputationHelper:
                 ]
             )
 
-            # --------------------------------------------------
-            # 3. Softmax
-            # --------------------------------------------------
             exp_eta = np.exp(eta_full - np.max(eta_full, axis=1, keepdims=True))
             pi_full = exp_eta / np.sum(exp_eta, axis=1, keepdims=True)
-
-            # Non-reference probabilities for present categories
             pi_p = pi_full[:, 1:][:, : len(idx)]
 
-            # --------------------------------------------------
-            # 4. Score
-            # --------------------------------------------------
             score = np.sum(y_obs_p - pi_p, axis=0)
 
-            # --------------------------------------------------
-            # 5. Fisher Information
-            # --------------------------------------------------
             Kp = len(idx)
             hessian = np.zeros((Kp, Kp))
 
@@ -538,12 +252,9 @@ class ComputationHelper:
                     hessian[k, j] = val
                     hessian[j, k] = val
 
-            # Small ridge for numerical stability (does NOT bias meaningfully)
+            # Small ridge for numerical stability
             hessian += 10 * np.eye(Kp)
 
-            # --------------------------------------------------
-            # 6. Fisher scoring update
-            # --------------------------------------------------
             try:
                 step = np.linalg.solve(hessian, score)
             except np.linalg.LinAlgError:
@@ -554,9 +265,6 @@ class ComputationHelper:
             if np.linalg.norm(step) < tol:
                 break
 
-        # --------------------------------------------------
-        # 7. Write back results
-        # --------------------------------------------------
         alpha[idx] = alpha_p
         return alpha
 
@@ -595,7 +303,6 @@ class ContinousComputationUnit(ComputationUnit):
         response: str,
         predictors: List[str],
         beta: np.ndarray,
-        **kwargs,
     ):
         y, X = get_data(data, response, predictors)
         if X is None:
@@ -614,7 +321,6 @@ class BinaryComputationUnit(ComputationUnit):
         response: str,
         predictors: List[str],
         beta: np.ndarray,
-        **kwargs,
     ):
         y, X = get_data(data, response, predictors)
         if X is None:
@@ -632,7 +338,6 @@ class CategoricalComputationUnit(ComputationUnit):
         response: str,
         predictors: List[str],
         beta: np.ndarray,
-        **kwargs,
     ):
         # Identify the dummy columns for the response
         response_dummy_columns = [
@@ -657,20 +362,15 @@ class CategoricalComputationUnit(ComputationUnit):
                 offset = np.zeros_like(y)
             else:
                 offset = X @ beta
-            # gamma = ComputationHelper.fit_multinomial_gamma(y=y, offset=offset)
-            gamma = ComputationHelper.fit_local_alpha(y, X @ beta)
-            # if response == "A":
-            #     print(response, "~", predictors)
-            # print(gamma)
-            gamma = np.tile(np.array(gamma), (y.shape[0], 1))
-
+            alpha = ComputationHelper.fit_multinomial_alpha(y, X @ beta)
+            alpha = np.tile(np.array(alpha), (y.shape[0], 1))
         else:
-            gamma = np.zeros_like(y)
+            alpha = np.zeros_like(y)
 
         if X is None:
             eta = np.zeros_like(y)
             mu = np.clip(
-                softmax(np.column_stack([np.zeros(y.shape[0]), eta + gamma]), axis=1),
+                softmax(np.column_stack([np.zeros(y.shape[0]), eta + alpha]), axis=1),
                 1e-8,
                 1 - 1e-8,
             )  # N x J
@@ -690,7 +390,7 @@ class CategoricalComputationUnit(ComputationUnit):
         # Compute eta and mu
         eta = X @ beta  # N x (J-1)
         mu = np.clip(
-            softmax(np.column_stack([np.zeros(y.shape[0]), eta + gamma]), axis=1),
+            softmax(np.column_stack([np.zeros(y.shape[0]), eta + alpha]), axis=1),
             1e-8,
             1 - 1e-8,
         )  # N x J
@@ -715,7 +415,7 @@ class CategoricalComputationUnit(ComputationUnit):
             except np.linalg.LinAlgError:
                 var_i_inv = np.linalg.pinv(var_i)
 
-            # because gamma is only added to mu and not to eta, gamma does not need to be subtracted from eta here
+            # because alpha is only added to mu and not to eta, alpha does not need to be subtracted from eta here
             z_i = (eta[i]) + var_i_inv @ (y_i - p_i)  # (J-1)
 
             # Compute local contributions to XWX and XWz
@@ -724,15 +424,8 @@ class CategoricalComputationUnit(ComputationUnit):
             XWX += Xi.T @ Wi @ Xi
             XWz += Xi.T @ Wi @ z_i
 
-        # print('TEST')
-        # print(XWX)
-        # print(XWz)
-        # asd
-        # Compute log-likelihood
         logprob = np.log(np.clip(mu, 1e-8, 1-1e-8))
         llf = np.sum(y_full * logprob)
-
-        # print(np.linalg.norm(XWz.reshape(-1), 2))
 
         # only use non-dummy values in rss and n for gaussian regression
         return {"llf": llf, "xwx": XWX, "xwz": XWz.reshape(-1, 1), "rss": 0, "n": 0}
@@ -759,11 +452,7 @@ class OrdinalComputationUnit:  # (ComputationUnit):
         response: str,
         predictors: List[str],
         beta: np.ndarray,
-        **kwargs,
     ):
-        # gamma_store = kwargs["ordinal_gamma_store"]
-        # regression_key = (response, tuple(sorted(predictors)))
-
         # Identify the dummy columns for the response
         response_dummy_columns = [
             c for c in data.columns if c.startswith(f"{response}{ordinal_separator}")
@@ -791,37 +480,16 @@ class OrdinalComputationUnit:  # (ComputationUnit):
                 level_int = int(level.split(ordinal_separator)[-1])
                 level_y = (y.squeeze() <= level_int).astype(float)
 
-                level_eta, level_mu, level_gamma = ComputationHelper.run_prediction(
+                level_eta, level_mu, level_alpha = ComputationHelper.run_prediction(
                     y=level_y, X=X, beta=beta_i, family=Binomial
                 )
-                # print(gamma_store)
-                # if regression_key not in gamma_store:
-                #     gamma_store[regression_key] = {}
-                # if level_int not in gamma_store[regression_key]:
-                #     gamma_store[regression_key][level_int] = 0
-                # level_gamma, update = ComputationHelper.fit_local_gamma_ordinal(
-                #     y,
-                #     X @ beta,
-                #     Binomial,
-                #     gamma_store[regression_key][level_int],
-                # )
-                # gamma_store[regression_key][level_int] = level_gamma
-                # level_gamma = self.gamma_store[regression_key][
-                #     level_int
-                # ] + gamma_blend_factor * (
-                #     level_gamma - self.gamma_store[regression_key][level_int]
-                # )
-                # self.gamma_store[regression_key][level_int] = level_gamma
-
-                # if len(predictors) == 2:
-                #     print(level_int, level_gamma)
                 mus.append(level_mu)
                 level_xwx, level_xwz = ComputationHelper.get_irls_step(
                     y=level_y,
                     X=X,
                     eta=level_eta,
                     mu=level_mu,
-                    gamma=level_gamma,
+                    alpha=level_alpha,
                     family=Binomial,
                 )
 
@@ -1105,8 +773,6 @@ class Client:
                 )
             return result
 
-        # print("Client", list("ABCDEFGH")[int(self.id) - 1])
-
         results = {}
         for test_key, beta in betas.items():
             resp_var, cond_vars, _ = test_key
@@ -1129,14 +795,12 @@ class Client:
                 self.expanded_data,
                 resp_var,
                 cond_vars,
-                beta,
-                ordinal_gamma_store=self.local_effect_store_ordinal,
+                beta
             )
             if len(self.contributing_clients) > 0:
                 result = self.apply_masks(test_key, result)
 
             results[test_key] = BetaUpdateData(**result)
-        # TODO: maybe just exchange difference of LLF of full and nested models
         return results
 
 
@@ -1145,7 +809,6 @@ class ProxyClient(rpyc.Service):
         self.client = Client(id, data, _network_fetch_function=rpyc.classic.obtain)
         self.server: rpyc.utils.server.ThreadedServer = None
 
-        # expose alle Methoden sofort:
         for name in dir(self.client):
             if callable(getattr(self.client, name)) and not name.startswith("_"):
                 setattr(self, name, getattr(self.client, name))

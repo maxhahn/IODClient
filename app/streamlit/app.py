@@ -15,6 +15,8 @@ sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
+import random
+
 import extra_streamlit_components as stx
 import graphviz
 import numpy as np
@@ -87,6 +89,11 @@ if "max_conditioning_set" not in st.session_state:
     st.session_state["max_conditioning_set"] = 1
 if "_max_conditioning_set" not in st.session_state:
     st.session_state["_max_conditioning_set"] = 1
+
+if "rpc_port" not in st.session_state:
+    st.session_state["rpc_port"] = random.randint(16000, 17000)
+if "_rpc_port" not in st.session_state:
+    st.session_state["_rpc_port"] = st.session_state["rpc_port"]
 
 if "uploaded_data" not in st.session_state:
     st.session_state["uploaded_data"] = None
@@ -227,6 +234,22 @@ def step_check_in_to_server():
         container.warning(
             "When using fedCI, a port on your network will be used for RPC communication"
         )
+        col2.write("Select RPC Port")
+
+        def change_rpc_port_value():
+            st.session_state["_rpc_port"] = st.session_state["rpc_port"]
+
+        _, col1, _ = st.columns((1, 6, 1))
+        col2.number_input(
+            "Select RPC Port",
+            value=st.session_state["_rpc_port"],
+            min_value=16000,
+            max_value=17000,
+            step=1,
+            key="rpc_port",
+            on_change=change_rpc_port_value,
+            label_visibility="collapsed",
+        )
 
     # TODO: add description
 
@@ -272,9 +295,10 @@ def step_check_in_to_server():
                 del st.session_state["fedci_client_thread"]
                 st.session_state["fedci_client_thread"] = None
 
-            import random
-
-            client_port = random.randint(16016, 16096)  # 16016
+            # import random
+            client_port = st.session_state[
+                "rpc_port"
+            ]  # random.randint(16016, 16096)  # 16016
             client = fedci.ProxyClient(
                 st.session_state["username"],
                 pl.from_pandas(st.session_state["uploaded_data"]),
@@ -894,6 +918,8 @@ def step_show_room_details():
 
     st.write(f"<sup>Room protocol: {room['algorithm']}<sup>", unsafe_allow_html=True)
     if room["algorithm"] == env.Algorithm.FEDCI and room["is_processing"]:
+        if room["progress"] is not None:
+            st.progress(room["progress"])
         st.write(
             f"<sup>{room['state_msg']}<sup>",
             unsafe_allow_html=True,
@@ -1133,6 +1159,7 @@ def data2graph(data, labels):
                     labels[j],
                     arrowtail=arrow_type_lookup[arrtail],
                     arrowhead=arrow_type_lookup[arrhead],
+                    dir="both",
                 )
             elif data[i][j] == 2:
                 graph.edge(
@@ -1148,6 +1175,7 @@ def data2graph(data, labels):
                     labels[j],
                     arrowtail=arrow_type_lookup[arrtail],
                     arrowhead=arrow_type_lookup[arrhead],
+                    dir="both",
                 )
 
     return graph
@@ -1155,10 +1183,7 @@ def data2graph(data, labels):
 
 def step_view_results():
     room = st.session_state["current_room"]
-    import pickle
 
-    with open("test.pkl", "wb") as f:
-        pickle.dump(room["result"], f)
     result_graphs = [
         data2graph(d, l) for d, l in zip(room["result"], room["result_labels"])
     ]

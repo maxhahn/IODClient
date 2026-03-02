@@ -165,7 +165,7 @@ def get_data(pag, num_samples, var_types, var_levels, seed):
             seed,
         )
 
-        df = ro.conversion.get_conversion().rpy2py(pd.DataFrame(dat["dat"]))
+        df = ro.conversion.get_conversion().rpy2py(pd.DataFrame(dat.getbyname("dat")))
     df = pl.from_pandas(df)
     for var_name, var_type in var_types.items():
         if var_type == "continuous":
@@ -195,8 +195,11 @@ def mxm_ci_test(df):
         # Invoking the R function and getting the result
         result = run_ci_test_f(df_r, 999, "./examples/", "dummy")
         # Converting it back to a pandas dataframe.
-        df_pvals = ro.conversion.get_conversion().rpy2py(result["citestResults"])
-        labels = list(result["labels"])
+        df_pvals = ro.conversion.get_conversion().rpy2py(
+            result.getbyname("citestResults")
+        )
+        # labels = list(result["labels"])
+        labels = list(result.getbyname("labels"))
     return df_pvals, labels
 
 
@@ -217,7 +220,6 @@ def server_results_to_dataframe(labels, results):
     )
     rows = []
 
-
     for test in likelihood_ratio_tests:
         betas = test.get_betas()
 
@@ -237,10 +239,9 @@ def server_results_to_dataframe(labels, results):
         lrt1_restricted = sorted_betas[2]
         lrt1_unrestricted = sorted_betas[3]
 
-
         cond_set = test.conditioning_set
 
-        cond_set = sorted(list(set(cond_set) - {'__client'}))
+        cond_set = sorted(list(set(cond_set) - {"__client"}))
 
         s_labels_string = ",".join(cond_set)
         rows.append(
@@ -400,7 +401,7 @@ def test_dataset(df, labels):
     ]
     meta_dfs, meta_df_labels = zip(*[mxm_ci_test(d) for d in _dfs])
     meta_dfs = [
-        replace_idx_with_varnames(pl.from_pandas(_df).drop('p1', 'p2'), _labels)
+        replace_idx_with_varnames(pl.from_pandas(_df).drop("p1", "p2"), _labels)
         for _df, _labels in zip(meta_dfs, meta_df_labels)
     ]
 
@@ -428,8 +429,13 @@ def test_dataset(df, labels):
     t2 = time.time()
     # print(fisher_df)
     # STEP 3: Test with FedCI
-    os.environ['CLIENT_HETEROGENIETY'] = "1"
+    os.environ["CLIENT_HETEROGENIETY"] = "1"
+    # os.environ["DEBUG"] = "3"
     server = fedci.Server([fedci.Client(str(i), d) for i, d in enumerate(dfs, start=1)])
+
+    x = server.test("A", "B", ["D"])
+    print(x)
+    asd
 
     fedci_results = server.run()
     t3 = time.time()
@@ -438,8 +444,9 @@ def test_dataset(df, labels):
     fedci_df = server_results_to_dataframe(fedci_all_labels, fedci_results).sort(
         "ord", "X", "Y", "S"
     )
-
-    os.environ['CLIENT_HETEROGENIETY'] = "2"
+    asd
+    os.environ["CLIENT_HETEROGENIETY"] = "2"
+    os.environ["DEBUG"] = "0"
     server = fedci.Server([fedci.Client(str(i), d) for i, d in enumerate(dfs, start=1)])
 
     fedci_results = server.run()
@@ -450,7 +457,16 @@ def test_dataset(df, labels):
         "ord", "X", "Y", "S"
     )
 
-    return pooled_result_df, fisher_df, fedci_df, fedci_df2, t1 - t0, t2 - t1, t3 - t2, t4 - t3
+    return (
+        pooled_result_df,
+        fisher_df,
+        fedci_df,
+        fedci_df2,
+        t1 - t0,
+        t2 - t1,
+        t3 - t2,
+        t4 - t3,
+    )
 
 
 ### iod funcs
@@ -552,6 +568,17 @@ CLIENTS = [4, 8, 12]
 
 pag_ids_to_test = sorted(three_tail_pags)[::-1]
 
+### TEST
+# SEEDS = [10027]
+# SAMPLES = [2500]
+# CLIENTS = [4]
+# pag_ids_to_test = [36]
+SEEDS = [10027]
+SAMPLES = [2500]
+CLIENTS = [4]
+pag_ids_to_test = [36]
+
+
 # if True:
 #     SEEDS = [10002]
 #     SAMPLES = [1000]
@@ -576,7 +603,8 @@ for pag_id in tqdm(pag_ids_to_test, position=0, leave=True):
 
     df_msep = df_msep_mapping[pag_id]
 
-    oracle_result_og, oracle_result_ot = orcale_test_iod(df_msep, label_split)
+    # oracle_result_og, oracle_result_ot = orcale_test_iod(df_msep, label_split)
+    oracle_result_og, oracle_result_ot = None, None
 
     fixed_effect_pag = np.zeros((base_pag.shape[0] + 1, base_pag.shape[1] + 1))
     fixed_effect_pag[:-1, :-1] = base_pag
@@ -615,20 +643,32 @@ for pag_id in tqdm(pag_ids_to_test, position=0, leave=True):
                 file_key = f"{seed}-id{pag_id}-s{num_samples}-c{num_clients}.parquet"
                 target_file = f"{data_dir}/{file_key}"
                 if os.path.exists(target_file):
-                   continue
+                    continue
 
                 df = get_data(
                     fixed_effect_pag, num_samples, var_types, var_levels_list, seed
                 )
 
-                #df.write_parquet('test_data2.parquet')
-                #asd
-                df_pooled, df_fisher, df_fedci_local_effect, df_fedci, time_pooled, time_fisher, time_fedci_local_effect, time_fedci = (
-                    test_dataset(df, label_split)
-                )
+                # df.write_parquet('test_data2.parquet')
+                # asd
+                (
+                    df_pooled,
+                    df_fisher,
+                    df_fedci_local_effect,
+                    df_fedci,
+                    time_pooled,
+                    time_fisher,
+                    time_fedci_local_effect,
+                    time_fedci,
+                ) = test_dataset(df, label_split)
 
                 # CALCULATE SHD
-                _df_pooled, _df_fisher, _df_fedci_local_effect, _df_fedci = df_pooled, df_fisher, df_fedci_local_effect, df_fedci
+                _df_pooled, _df_fisher, _df_fedci_local_effect, _df_fedci = (
+                    df_pooled,
+                    df_fisher,
+                    df_fedci_local_effect,
+                    df_fedci,
+                )
                 _df_pooled = _df_pooled.select(
                     "ord", "X", "Y", "S", "pvalue"
                 ).drop_nulls()
@@ -644,14 +684,18 @@ for pag_id in tqdm(pag_ids_to_test, position=0, leave=True):
 
                 pooled_result_og, pooled_result_ot = run_iod(_df_pooled, label_split)
                 fisher_result_og, fisher_result_ot = run_iod(_df_fisher, label_split)
-                fedci_local_effect_result_og, fedci_local_effect_result_ot = run_iod(df_fedci_local_effect, label_split)
+                fedci_local_effect_result_og, fedci_local_effect_result_ot = run_iod(
+                    df_fedci_local_effect, label_split
+                )
                 fedci_result_og, fedci_result_ot = run_iod(_df_fedci, label_split)
 
                 pooled_pag_list_og, pooled_pag_labels_og = pooled_result_og
                 # pooled_pag_list_ot, pooled_pag_labels_ot = pooled_result_ot
                 fisher_pag_list_og, fisher_pag_labels_og = fisher_result_og
                 # fisher_pag_list_ot, fisher_pag_labels_ot = fisher_result_ot
-                fedci_local_effect_pag_list_og, fedci_local_effect_pag_labels_og = fedci_local_effect_result_og
+                fedci_local_effect_pag_list_og, fedci_local_effect_pag_labels_og = (
+                    fedci_local_effect_result_og
+                )
                 # fedci_local_effect_pag_list_ot, fedci_local_effect_pag_labels_ot = fedci_local_effect_result_ot
                 fedci_pag_list_og, fedci_pag_labels_og = fedci_result_og
                 # fedci_pag_list_ot, fedci_pag_labels_ot = fedci_result_ot
@@ -660,7 +704,9 @@ for pag_id in tqdm(pag_ids_to_test, position=0, leave=True):
                 # pooled_shds_ot = get_min_shd(pooled_result_ot, oracle_result_ot)
                 fisher_shds_og = get_min_shd(fisher_result_og, oracle_result_og)
                 # fisher_shds_ot = get_min_shd(fisher_result_ot, oracle_result_ot)
-                fedci_local_effect_shds_og = get_min_shd(fedci_local_effect_result_og, oracle_result_og)
+                fedci_local_effect_shds_og = get_min_shd(
+                    fedci_local_effect_result_og, oracle_result_og
+                )
                 # fedci_local_effect_shds_ot = get_min_shd(fedci_local_effect_result_ot, oracle_result_ot)
                 fedci_shds_og = get_min_shd(fedci_result_og, oracle_result_og)
                 # fedci_shds_ot = get_min_shd(fedci_result_ot, oracle_result_ot)
@@ -671,8 +717,11 @@ for pag_id in tqdm(pag_ids_to_test, position=0, leave=True):
                 df_fisher = df_fisher.rename({"pvalue": "fisher_pvalue"}).with_columns(
                     fisher_runtime=pl.lit(time_fisher), fisher_shds_og=fisher_shds_og
                 )
-                df_fedci_local_effect = df_fedci_local_effect.rename({"pvalue": "fedci_local_effect_pvalue"}).with_columns(
-                    fedci_local_effect_runtime=pl.lit(time_fedci_local_effect), fedci_shds_og=fedci_local_effect_shds_og
+                df_fedci_local_effect = df_fedci_local_effect.rename(
+                    {"pvalue": "fedci_local_effect_pvalue"}
+                ).with_columns(
+                    fedci_local_effect_runtime=pl.lit(time_fedci_local_effect),
+                    fedci_shds_og=fedci_local_effect_shds_og,
                 )
                 df_fedci = df_fedci.rename({"pvalue": "fedci_pvalue"}).with_columns(
                     fedci_runtime=pl.lit(time_fedci), fedci_shds_og=fedci_shds_og
@@ -703,11 +752,10 @@ for pag_id in tqdm(pag_ids_to_test, position=0, leave=True):
                     var_types=var_types,
                 )
 
-
                 # df = df_result.with_columns(pval_diff_to_local=pl.col('pooled_pvalue')-pl.col('fedci_pvalue'))
                 # print(df.sort('pval_diff_to_local').select('seed', 'pag_id', 'num_samples', 'partitions', 'X','Y','S', cs.contains('pvalue'), 'p1', 'p2'))
 
-                # asd
+                asd
 
                 if not os.path.exists(f"{data_dir}"):
                     os.makedirs(f"{data_dir}")

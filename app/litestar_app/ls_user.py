@@ -5,7 +5,7 @@ import uuid
 from typing import Optional
 
 import polars as pl
-from litestar import Controller, MediaType, Response, post
+from litestar import Controller, MediaType, Request, Response, post
 from litestar.exceptions import HTTPException
 from ls_data_structures import (
     CheckInRequest,
@@ -117,7 +117,9 @@ class UserController(Controller):
         )
 
     @post("/submit-rpc-info")
-    async def receive_fedci_data(self, data: FedCIDataSubmissionRequest) -> Response:
+    async def receive_fedci_data(
+        self, data: FedCIDataSubmissionRequest, request: Request
+    ) -> Response:
         if not validate_user_request(data.id, data.username):
             raise HTTPException(
                 detail="The provided identification is not recognized by the server",
@@ -132,7 +134,7 @@ class UserController(Controller):
 
         # data to pandas conversion
         connections[data.id].algorithm_data = FedCIUserData(
-            data_schema=data.data_schema, hostname=data.hostname, port=data.port
+            data_schema=data.data_schema, hostname=request.client.host, port=data.port
         )
 
         return Response(

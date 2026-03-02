@@ -18,7 +18,7 @@ plt.rcParams["axes.unicode_minus"] = False
 
 pl.Config.set_tbl_rows(40)
 
-COORD_ASC_FEDCI = False
+COORD_ASC_FEDCI = True
 
 # df.group_by('pag_id', 'seed', 'num_samples', 'partitions').len().filter(pl.col('len')!=42)
 
@@ -41,85 +41,7 @@ alpha = 0.05
 
 # df_base = pl.concat(dfs, how="vertical_relaxed")
 
-df_base = pl.read_parquet("simulations/*.parquet")
-
-####
-# FILTER OUT ALL IMPOSSIBLE TESTS (are auto filtered in updated code, but this supports old files)
-df_base = df_base.with_columns(
-    non_global_vars=pl.col("vars1").list.set_symmetric_difference(pl.col("vars2"))
-)
-df_base = df_base.filter(
-    (
-        pl.col("S").str.replace_all(
-            ",",
-            "",
-        )
-        + pl.col("X")
-        + pl.col("Y")
-    )
-    .str.split("")
-    .list.set_intersection(pl.col("non_global_vars"))
-    .list.len()
-    < 2
-)
-####
-
-print("== Perc of nulls in pooled")
-print(df_base.select(cs.contains("pvalue").null_count() / len(df_base)))
-
-
-df_sample_errors = (
-    df_base.filter(
-        pl.col("pooled_pvalue")
-        .is_null()
-        .any()
-        .over("pag_id", "seed", "num_samples", "partitions")
-    )
-    .select("pag_id", "seed", "num_samples", "partitions")
-    .unique()
-)
-print("== SAMPLE ERRORS ==")
-print(df_sample_errors)
-
-# df_base = df_base.filter(pl.col("pooled_pvalue").is_not_null())
-
-df_base = df_base.join(
-    df_sample_errors, on=["pag_id", "seed", "num_samples", "partitions"], how="anti"
-)
-
-df_base = df_base.with_columns(
-    max_norm=pl.max_horizontal(
-        [
-            pl.col("norm_X_unres").list.max(),
-            pl.col("norm_X_res").list.max(),
-            pl.col("norm_Y_unres").list.max(),
-            pl.col("norm_Y_res").list.max(),
-        ]
-    )
-)
-
-# df_base = df_base.filter(pl.col("max_norm") < 1000)
-
-
-# df_base = df_base.filter(pl.col("fedci_pvalue").is_null())
-# df_base = df_base.with_columns(
-#     filename=pl.format(
-#         "experiments/fixed_effect_data/sim2/{}-id{}-s{}-c{}.parquet",
-#         pl.col("seed"),
-#         pl.col("pag_id"),
-#         pl.col("num_samples"),
-#         pl.col("partitions"),
-#     )
-# )
-# import os
-
-# print(df_base.select("filename", "pag_id", "seed", "partitions", "num_samples"))
-# for row in df_base.unique(subset=["filename"]).rows(named=True):
-#     fname = row["filename"]
-#     os.remove(fname)
-# asd
-
-# df_base = df_base.filter(pl.col("seed") != 10011)
+df_base = pl.read_parquet("simulations/final-data.parquet")
 
 graph = None  # "SLIDES"
 num_samples = None
@@ -236,7 +158,7 @@ def show_correlation_to_msep(df_base):
                 xlabel=r"\# Samples",  # LaTeX-escaped #
                 ylabel=r"Correlation",
                 linestyle=["solid", "dashed", "dotted"],
-                linewidth=[2, 2, 6],
+                linewidth=[3, 3, 6],
                 # title=f'{"Client" if i == 1 else "Clients"}'
             )
         )
@@ -265,7 +187,12 @@ def show_correlation_to_msep(df_base):
         )
         _plot = _plot.opts(
             opts.Curve(
-                color=hv.Cycle(["#1f77b4", "#d62728", "#2ca02c"]),  # Blue, Red, Green
+                # color=hv.Cycle(["#1f77b4", "#d62728", "#2ca02c"]),  # Blue, Red, Green
+                color=hv.Cycle(
+                    # ["#440154FF", "#FDE725FF", "#1f968BFF"]
+                    # ["#541352", "#10A53D", "#3A5E8C"]
+                    ["#0072B2", "#009E73", "#D55E00"]
+                ),  # Viridis sample
                 linestyle=hv.Cycle(["solid", "dashed", "dotted"]),
                 alpha=1,
                 backend="matplotlib",
@@ -298,28 +225,36 @@ def show_msep_agreement(df_base):
     print("== MSep Agreement")
     df = df_base.with_columns(cs.contains("pvalue") >= alpha)
     df = df.with_columns(cs.contains("pvalue") == pl.col("MSep"))
-    print("Dependent!")
-    df_dep = df.filter(~pl.col("MSep"))
+
+    if COORD_ASC_FEDCI:
+        file_ending = "-CA"
+        varname = "fedci_local_effect_pvalue"
+    else:
+        file_ending = ""
+        varname = "fedci_pvalue"
+
+    print("ALL!")
+    df_all = df
     print(
-        df_dep.group_by("pooled_pvalue", "fisher_pvalue", "fedci_pvalue")
+        df_all.group_by("pooled_pvalue", "fisher_pvalue", varname)
         .len()
-        .sort("pooled_pvalue", "fisher_pvalue", "fedci_pvalue")
+        .sort("pooled_pvalue", "fisher_pvalue", varname)
     )
 
     identifiers = ["partitions", "num_samples"]
 
-    df_dep = df_dep.group_by(identifiers).agg(cs.contains("pvalue").mean(), pl.len())
+    df_all = df_all.group_by(identifiers).agg(cs.contains("pvalue").mean(), pl.len())
 
-    df_dep = df_dep.rename(
+    df_all = df_all.rename(
         {
             "pooled_pvalue": "Pooled",
             "fisher_pvalue": "Fisher",
-            "fedci_pvalue": "fedCI",
+            varname: f"fedCI{file_ending}",
         }
     )
 
-    df_unpivot = df_dep.unpivot(
-        on=["Pooled", "Fisher", "fedCI"],
+    df_unpivot = df_all.unpivot(
+        on=["Pooled", "Fisher", f"fedCI{file_ending}"],
         index=identifiers,
         value_name="accuracy",
         variable_name="Method",
@@ -378,7 +313,12 @@ def show_msep_agreement(df_base):
         )
         _plot = _plot.opts(
             opts.Curve(
-                color=hv.Cycle(["#1f77b4", "#d62728", "#2ca02c"]),  # Blue, Red, Green
+                # color=hv.Cycle(["#1f77b4", "#d62728", "#2ca02c"]),  # Blue, Red, Green
+                color=hv.Cycle(
+                    # ["#440154FF", "#FDE725FF", "#1f968BFF"]
+                    # ["#541352", "#10A53D", "#3A5E8C"]
+                    ["#0072B2", "#009E73", "#D55E00"]
+                ),  # Viridis sample
                 linestyle=hv.Cycle(["solid", "dashed", "dotted"]),
                 alpha=1,
                 backend="matplotlib",
@@ -391,7 +331,111 @@ def show_msep_agreement(df_base):
         _render = hv.render(_plot, backend="matplotlib")
         # _render.savefig(f'images/correlation-c{i}.pgf', format='pgf', bbox_inches='tight', dpi=300)
         _render.savefig(
-            f"{image_folder}/slides_acc/accuracy-dep-c{i}.svg",
+            f"{image_folder}/slides_acc/accuracy-all-c{i}{file_ending}.svg",
+            format="svg",
+            bbox_inches="tight",
+            dpi=300,
+        )
+
+    print("Dependent!")
+    df_dep = df.filter(~pl.col("MSep"))
+    print(
+        df_dep.group_by("pooled_pvalue", "fisher_pvalue", varname)
+        .len()
+        .sort("pooled_pvalue", "fisher_pvalue", varname)
+    )
+
+    identifiers = ["partitions", "num_samples"]
+
+    df_dep = df_dep.group_by(identifiers).agg(cs.contains("pvalue").mean(), pl.len())
+
+    df_dep = df_dep.rename(
+        {
+            "pooled_pvalue": "Pooled",
+            "fisher_pvalue": "Fisher",
+            varname: f"fedCI{file_ending}",
+        }
+    )
+
+    df_unpivot = df_dep.unpivot(
+        on=["Pooled", "Fisher", f"fedCI{file_ending}"],
+        index=identifiers,
+        value_name="accuracy",
+        variable_name="Method",
+    )
+
+    df_unpivot = df_unpivot.rename(
+        {"num_samples": "\# Samples", "accuracy": "Decision Agreements"}
+    )
+
+    df_unpivot = df_unpivot.with_columns(
+        sort_key=pl.col("Method").replace_strict(sort_order)
+    )
+
+    for i in df["partitions"].unique().to_list():
+        _plot = (
+            df_unpivot.filter(pl.col("partitions") == i)
+            .sort("sort_key", "\# Samples")
+            .hvplot.line(
+                x="\# Samples",
+                y="Decision Agreements",
+                alpha=1,
+                ylim=(-0.01, 1.01),
+                width=400,
+                height=400,
+                by="Method",
+                legend="top_left",
+                xlabel=r"\# Samples",  # LaTeX-escaped #
+                ylabel=r"Decision Agreements",
+                linestyle=["solid", "dashed", "dotted"],
+                linewidth=[2, 2, 6],
+                # title=f'{"Client" if i == 1 else "Clients"}'
+            )
+        )
+
+        def adjust_axis_spacing(plot, element):
+            ax = plot.handles["axis"]
+            # Distance between axis line and tick labels
+            ax.tick_params(axis="x", pad=8)
+            ax.tick_params(axis="y", pad=8)
+            # Distance between tick labels and axis labels
+            ax.xaxis.labelpad = 10
+            ax.yaxis.labelpad = 10
+
+        _plot = _plot.opts(
+            legend_opts={
+                # "title": "Correctness",
+                # "ncol": 2,  # two columns
+                # "loc": "upper center",  # position above plot
+                "bbox_to_anchor": (0.01, 0.45),  # fine-tune vertical placement
+                "borderpad": 1.2,
+                "labelspacing": 1.2,
+                "frameon": False,  # usually looks cleaner for LaTeX
+            },
+            # --- Axis and label padding ---
+            hooks=[adjust_axis_spacing],
+        )
+        _plot = _plot.opts(
+            opts.Curve(
+                # color=hv.Cycle(["#1f77b4", "#d62728", "#2ca02c"]),  # Blue, Red, Green
+                color=hv.Cycle(
+                    # ["#440154FF", "#FDE725FF", "#1f968BFF"]
+                    # ["#541352", "#10A53D", "#3A5E8C"]
+                    ["#0072B2", "#009E73", "#D55E00"]
+                ),  # Viridis sample
+                linestyle=hv.Cycle(["solid", "dashed", "dotted"]),
+                alpha=1,
+                backend="matplotlib",
+            ),
+        )
+
+        # # Apply different line styles
+        # # _plot = _plot.opts(line_dash=['solid', 'dashed'])
+
+        _render = hv.render(_plot, backend="matplotlib")
+        # _render.savefig(f'images/correlation-c{i}.pgf', format='pgf', bbox_inches='tight', dpi=300)
+        _render.savefig(
+            f"{image_folder}/slides_acc/accuracy-dep-c{i}{file_ending}.svg",
             format="svg",
             bbox_inches="tight",
             dpi=300,
@@ -399,9 +443,9 @@ def show_msep_agreement(df_base):
     print("Independent!")
     df_indep = df.filter(pl.col("MSep"))
     print(
-        df_indep.group_by("pooled_pvalue", "fisher_pvalue", "fedci_pvalue")
+        df_indep.group_by("pooled_pvalue", "fisher_pvalue", varname)
         .len()
-        .sort("pooled_pvalue", "fisher_pvalue", "fedci_pvalue")
+        .sort("pooled_pvalue", "fisher_pvalue", varname)
     )
 
     identifiers = ["partitions", "num_samples"]
@@ -414,12 +458,12 @@ def show_msep_agreement(df_base):
         {
             "pooled_pvalue": "Pooled",
             "fisher_pvalue": "Fisher",
-            "fedci_pvalue": "fedCI",
+            varname: f"fedCI{file_ending}",
         }
     )
 
     df_unpivot = df_indep.unpivot(
-        on=["Pooled", "Fisher", "fedCI"],
+        on=["Pooled", "Fisher", f"fedCI{file_ending}"],
         index=identifiers,
         value_name="accuracy",
         variable_name="Method",
@@ -478,7 +522,12 @@ def show_msep_agreement(df_base):
         )
         _plot = _plot.opts(
             opts.Curve(
-                color=hv.Cycle(["#1f77b4", "#d62728", "#2ca02c"]),  # Blue, Red, Green
+                # color=hv.Cycle(["#1f77b4", "#d62728", "#2ca02c"]),  # Blue, Red, Green
+                color=hv.Cycle(
+                    # ["#440154FF", "#FDE725FF", "#1f968BFF"]
+                    # ["#541352", "#10A53D", "#3A5E8C"]
+                    ["#0072B2", "#009E73", "#D55E00"]
+                ),  # Viridis sample
                 linestyle=hv.Cycle(["solid", "dashed", "dotted"]),
                 alpha=1,
                 backend="matplotlib",
@@ -491,7 +540,7 @@ def show_msep_agreement(df_base):
         _render = hv.render(_plot, backend="matplotlib")
         # _render.savefig(f'images/correlation-c{i}.pgf', format='pgf', bbox_inches='tight', dpi=300)
         _render.savefig(
-            f"{image_folder}/slides_acc/accuracy-indep-c{i}.svg",
+            f"{image_folder}/slides_acc/accuracy-indep-c{i}{file_ending}.svg",
             format="svg",
             bbox_inches="tight",
             dpi=300,
@@ -517,15 +566,15 @@ def show_msep_agreement(df_base):
         )
         / pl.col("total_len"),
         fedCI=(
-            pl.col("fedCI") * pl.col("len")
-            + pl.col("fedCI_indep") * pl.col("len_indep")
+            pl.col(f"fedCI{file_ending}") * pl.col("len")
+            + pl.col(f"fedCI{file_ending}_indep") * pl.col("len_indep")
         )
         / pl.col("total_len"),
     )
     df_weighted = df_weighted.drop(cs.ends_with("_indep")).drop("total_len")
 
     df_unpivot = df_weighted.unpivot(
-        on=["Pooled", "Fisher", "fedCI"],
+        on=["Pooled", "Fisher", f"fedCI{file_ending}"],
         index=identifiers,
         value_name="accuracy",
         variable_name="Method",
@@ -584,7 +633,12 @@ def show_msep_agreement(df_base):
         )
         _plot = _plot.opts(
             opts.Curve(
-                color=hv.Cycle(["#1f77b4", "#d62728", "#2ca02c"]),  # Blue, Red, Green
+                # color=hv.Cycle(["#1f77b4", "#d62728", "#2ca02c"]),  # Blue, Red, Green
+                color=hv.Cycle(
+                    # ["#440154FF", "#FDE725FF", "#1f968BFF"]
+                    # ["#541352", "#10A53D", "#3A5E8C"]
+                    ["#0072B2", "#009E73", "#D55E00"]
+                ),  # Viridis sample
                 linestyle=hv.Cycle(["solid", "dashed", "dotted"]),
                 alpha=1,
                 backend="matplotlib",
@@ -597,7 +651,7 @@ def show_msep_agreement(df_base):
         _render = hv.render(_plot, backend="matplotlib")
         # _render.savefig(f'images/correlation-c{i}.pgf', format='pgf', bbox_inches='tight', dpi=300)
         _render.savefig(
-            f"{image_folder}/slides_acc/accuracy-weighted-c{i}.svg",
+            f"{image_folder}/slides_acc/accuracy-weighted-c{i}{file_ending}.svg",
             format="svg",
             bbox_inches="tight",
             dpi=300,
@@ -849,6 +903,7 @@ def show_fedci_pooled_diff(df_base, log=True):
             "diff_log",
         ).sort("diff_log")
     )
+    print(len(df))
     print(
         pl.concat(
             [
@@ -931,6 +986,43 @@ def show_deviation_from_pooled(df_base):
         fedci_pvalue_diff=pl.col(fedci_col) - pl.col("pooled_pvalue"),
         # fedci_pvalue_diff=pl.col("fedci_pvalue") - pl.col("pooled_pvalue"),
         # fedci_pvalue_diff=pl.col("fedci_local_effect_pvalue") - pl.col("pooled_pvalue"),
+    )
+    df = df.sort("fedci_pvalue_diff")
+    print("== Before PLOT")
+    print(len(df))
+    print(
+        pl.concat(
+            [
+                df.select(
+                    "X",
+                    "Y",
+                    "S",
+                    "pag_id",
+                    "seed",
+                    "partitions",
+                    "num_samples",
+                    "pooled_pvalue",
+                    "fisher_pvalue",
+                    fedci_col,
+                    "fisher_pvalue_diff",
+                    "fedci_pvalue_diff",
+                ).head(2),
+                df.select(
+                    "X",
+                    "Y",
+                    "S",
+                    "pag_id",
+                    "seed",
+                    "partitions",
+                    "num_samples",
+                    "pooled_pvalue",
+                    "fisher_pvalue",
+                    fedci_col,
+                    "fisher_pvalue_diff",
+                    "fedci_pvalue_diff",
+                ).tail(2),
+            ]
+        )
     )
 
     print(
@@ -1240,17 +1332,56 @@ def pval_diffs(df_base):
         )
 
 
-show_null_counts_in_pvalues(df_base)
-show_correlation_to_msep(df_base)
+# show_null_counts_in_pvalues(df_base)
+# show_correlation_to_msep(df_base)
 show_msep_agreement(df_base)
-# show_difference_to_msep(df_base)
-# show_correct_or_incorrect(df_base)
+## show_difference_to_msep(df_base)
+## show_correct_or_incorrect(df_base)
 show_msep_versus_prediction_by_partition(df_base)
-# show_incorrect_in_perc_by_partition(df_base)
+## show_incorrect_in_perc_by_partition(df_base)
 show_incorrect_in_perc_based_on_indep_by_partition(df_base)
-# show_incorrect_in_perc_based_on_indep_by_partition_with_ord(df_base)
-# show_correctness_on_bad_fisher_predictions(df_base)
-# show_fisher_v_fedci_disagreement(df_base)
+## show_incorrect_in_perc_based_on_indep_by_partition_with_ord(df_base)
+## show_correctness_on_bad_fisher_predictions(df_base)
+## show_fisher_v_fedci_disagreement(df_base)
+print(len(df_base))
 show_deviation_from_pooled(df_base)
 show_fedci_pooled_diff(df_base)
 pval_diffs(df_base)
+
+
+####
+#
+# Note on 31 log diff: {'A': 'binary', 'B': 'ordinal', 'C': 'continuous', 'D': 'binary', 'E': 'continuous', 'CLIENT': 'nominal'}
+# A ind B | D -> binary ind ordinal | binary
+# ymmetricLikelihoodRatioTest - A indep B | D, p: 0.0318                                                           | 0/1 [00:00<?, ?it/s]
+# 0%|   - LikelihoodRatioTest - y: A, x: B, S: ['D'], p: 0.0159                                                  | 0/1 [00:00<?, ?it/s]
+# 0%|   	- RegressionTest A ~ D, 1 - iteration 4/25                                                       | 0/1 [00:00<?, ?it/s]
+# - RegressionTest A ~ B, D, 1 - iteration 10/25
+# - LikelihoodRatioTest - y: B, x: A, S: ['D'], p: 0.0682
+# - RegressionTest B ~ D, 1 - iteration 2/25
+# - RegressionTest B ~ A, D, 1 - iteration 2/25
+#
+# fedCI got 0.0159 and 0.0682
+# pooled got xe-166 and 0.0317
+
+# 27 error
+# p1 and p2 (0.0007831156611571976, 6.080022213973404e-43)
+# fedci p is 0.0008
+# -> Very small diff, for the one pvalue but e-43 just too strong.
+# Clip to -10?
+# >>> df["var_types"][0]
+# {'A': 'ordinal', 'B': 'nominal', 'C': 'continuous', 'D': 'continuous', 'E': 'binary', 'CLIENT': 'nominal'}
+# A ind C | E -> ord ind cont | bin
+
+import polars as pl
+
+df = pl.read_parquet("simulations/sim-data.parquet")
+df = df.filter(
+    (pl.col("X") == "A")
+    & (pl.col("Y") == "C")
+    & (pl.col("S") == "E")
+    & (pl.col("seed") == 10016)
+    & (pl.col("pag_id") == 41)
+    & (pl.col("num_samples") == 500)
+    & (pl.col("partitions") == 4)
+)

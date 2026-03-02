@@ -1,11 +1,11 @@
 #!/bin/bash
 
 if [ "$MODE" = "CLIENT" ]; then
-    streamlit run streamlit/app.py --server.enableXsrfProtection false -server.port 8501
+    streamlit run streamlit/app.py --server.enableXsrfProtection false --server.port 8501
 elif [ "$MODE" = "SERVER" ]; then
-    litestar --app-dir litestar run
+    litestar --app-dir litestar_app run --debug --host 0.0.0.0 --wc 1
 elif [ "$MODE" = "HYBRID" ]; then
-    streamlit run streamlit/app.py --server.enableXsrfProtection false --server.fileWatcherType none --server.port 8501 & litestar --app-dir litestar_app run --debug --wc 1
+    streamlit run streamlit/app.py --server.enableXsrfProtection false --server.fileWatcherType none --server.port 8501 & litestar --app-dir litestar_app run --debug --host 0.0.0.0 --wc 1
 else
     echo 'Please choose on of >CLIENT<, >SERVER<, or >HYBRID< as the MODE environment variable'
     exit 1

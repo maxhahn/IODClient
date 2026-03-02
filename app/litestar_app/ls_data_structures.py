@@ -93,6 +93,8 @@ class Room:
 
     state_msg: str
     test_results = None
+    completed_tests = None
+    total_tests = None
 
 
 @dataclass
@@ -142,6 +144,7 @@ class RoomDetailsDTO:
     private_labels: List[str]
 
     state_msg: str
+    progress: float
 
     def __init__(self, room: Room, requesting_user: Union[str, None] = None):
         self.name = room.name
@@ -167,6 +170,11 @@ class RoomDetailsDTO:
             else None
         )
         self.state_msg = room.state_msg
+        self.progress = (
+            room.completed_tests / room.total_tests
+            if room.total_tests is not None and room.total_tests > 0
+            else None
+        )
 
 
 @dataclass

@@ -1,88 +1,175 @@
+import datetime
+from collections import OrderedDict
+from dataclasses import asdict
+from functools import partial
+from typing import Optional, Set
+
 import numpy as np
-from sklearn.metrics import confusion_matrix
 import pandas as pd
+import polars as pl
+import rpy2.rinterface as ri
+
+ri.embedded._C_stack_limit = 10**8  # ~100MB
+
+import rpy2.robjects as ro
+from rpy2.robjects import numpy2ri, pandas2ri
+
+import fedci
+
+# ro.r["source"]("app/scripts/iod.r")
+# # ro.r["source"]("ci_functions2.r")
 
 
-def calculate_pag_metrics(true_pag, predicted_pags, true_labels, predicted_labels_list):
-    metrics_list = []
+# def iod_r_call_on_combined_data(df, client_labels, alpha=0.05, procedure="original"):
+#     with (ro.default_converter + pandas2ri.converter).context():
+#         iod_on_ci_data_f = ro.globalenv["iod_on_ci_data"]
+#         labels = sorted(list(set().union(*(client_labels.values()))))
 
-    def adjacency_matrix_to_edges(matrix, labels):
-        """ Convert adjacency matrix to edge list with label ordering """
-        n = len(labels)
-        edges = []
-        for i in range(n):
-            for j in range(i+1, n):
-                if matrix[i, j] > 0:  # if there is a directed edge
-                    edges.append((labels[i], labels[j]))
-                if matrix[j, i] > 0:  # for undirected edges
-                    edges.append((labels[j], labels[i]))
-        return set(edges)
+#         suff_stat = [
+#             ("citestResults", ro.conversion.get_conversion().py2rpy(df)),
+#             ("all_labels", ro.StrVector(labels)),
+#         ]
+#         suff_stat = OrderedDict(suff_stat)
+#         suff_stat = ro.ListVector(suff_stat)
+#         users = client_labels.keys()
+#         label_list = [ro.StrVector(v) for v in client_labels.values()]
 
-    def structural_hamming_distance(edges_true, edges_pred):
-        """ Structural Hamming Distance """
-        return len(edges_true.symmetric_difference(edges_pred)) / len(edges_true.union(edges_pred))
+#         result = iod_on_ci_data_f(label_list, suff_stat, alpha, procedure)
 
-    def false_discovery_rate(edges_true, edges_pred):
-        """ False Discovery Rate """
-        fp = len(edges_pred - edges_true)
-        tp = len(edges_true & edges_pred)
-        return fp / (fp + tp) if (fp + tp) > 0 else 0
+#         g_pag_list = [x.value for x in result.getbyname("G_PAG_List").items()]
+#         g_pag_labels = [
+#             list([str(a) for a in x.value])
+#             for x in result.getbyname("G_PAG_Label_List").items()
+#         ]
+#         g_pag_list = [np.array(pag).astype(int).tolist() for pag in g_pag_list]
 
-    def false_omission_rate(edges_true, edges_pred):
-        """ False Omission Rate """
-        fn = len(edges_true - edges_pred)
-        tn = len(edges_true.union(edges_pred)) - len(edges_true & edges_pred)
-        return fn / (fn + tn) if (fn + tn) > 0 else 0
+#         gi_pag_list = [x.value for x in result.getbyname("Gi_PAG_list").items()]
+#         gi_pag_labels = [
+#             list([str(a) for a in x.value])
+#             for x in result.getbyname("Gi_PAG_Label_List").items()
+#         ]
+#         gi_pag_list = [np.array(pag).astype(int).tolist() for pag in gi_pag_list]
 
-    for pag, predicted_labels in zip(predicted_pags, predicted_labels_list):
-        edges_true = adjacency_matrix_to_edges(true_pag, true_labels)
-        edges_pred = adjacency_matrix_to_edges(pag, predicted_labels)
+#         user_pags = {u: r for u, r in zip(users, gi_pag_list)}
+#         user_labels = {u: l for u, l in zip(users, gi_pag_labels)}
 
-        shd = structural_hamming_distance(edges_true, edges_pred)
-        fdr = false_discovery_rate(edges_true, edges_pred)
-        for_ = false_omission_rate(edges_true, edges_pred)
+#         print(g_pag_list)
+#         print(g_pag_labels)
+#         print(gi_pag_list)
+#         print(gi_pag_labels)
 
-        # Calculating precision, recall, and F1-score
-        true_positive = len(edges_true & edges_pred)
-        false_positive = len(edges_pred - edges_true)
-        false_negative = len(edges_true - edges_pred)
-        true_negative = len(edges_true.union(edges_pred)) - true_positive
-
-        precision = true_positive / (true_positive + false_positive) if (true_positive + false_positive) > 0 else 0
-        recall = true_positive / (true_positive + false_negative) if (true_positive + false_negative) > 0 else 0
-        f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
-
-        metrics = {
-            "SHD": shd,
-            "FDR": fdr,
-            "FOR": for_,
-            "Precision": precision,
-            "Recall": recall,
-            "F1 Score": f1_score
-        }
-
-        metrics_list.append(metrics)
-
-    return metrics_list
+#     return g_pag_list, g_pag_labels, user_pags, user_labels
 
 
-true_pag = np.array([[0, 1, 0, 2, 0],
-                     [1, 0, 2, 0, 0],
-                     [0, 1, 0, 2, 2],
-                     [1, 0, 2, 0, 2],
-                     [0, 0, 2, 3, 0]])
+# df1 = pl.read_parquet("data-1.parquet")
+# df2 = pl.read_parquet("data-2.parquet")
 
-predicted_pags = [
-    np.array([[0, 0, 2, 2], [0, 0, 2, 0], [2, 1, 0, 2], [2, 0, 3, 0]]),
-    np.array([[0, 2, 0, 0], [1, 0, 1, 0], [0, 2, 0, 1], [0, 0, 1, 0]])
+# c1 = fedci.Client("1", df1)
+# c2 = fedci.Client("2", df2)
+# server = fedci.Server([c1, c2])
+
+# # likelihood_ratio_tests = server.run(max_cond_size=5)
+
+
+# # all_labels = sorted(list(server.schema.keys()))
+
+# # columns = ("ord", "X", "Y", "S", "pvalue")
+# # rows = []
+# # for test in sorted(likelihood_ratio_tests):
+# #     s_labels_string = ",".join(
+# #         sorted([str(all_labels.index(l) + 1) for l in test.conditioning_set])
+# #     )
+# #     rows.append(
+# #         (
+# #             len(test.conditioning_set),
+# #             all_labels.index(test.v0) + 1,
+# #             all_labels.index(test.v1) + 1,
+# #             s_labels_string,
+# #             test.p_value,
+# #         )
+# #     )
+
+# # df = pd.DataFrame(data=rows, columns=columns)
+
+
+# # _df = pl.from_pandas(df).write_parquet("testres.parquet")
+# df = pl.read_parquet("testres.parquet").to_pandas()
+
+# # let index start with 1
+# df.index += 1
+
+# alpha = 0.05
+
+# participant_data_labels = {}
+# participants = [c.id for c in server.clients.values()]
+# participant_data_labels = {
+#     str(i + 1): c.schema.keys() for i, c in enumerate(list(server.clients.values()))
+# }
+
+
+# print(df)
+# print(participant_data_labels)
+
+# result, result_labels, user_results, user_labels = iod_r_call_on_combined_data(
+#     df,
+#     participant_data_labels,
+#     alpha=alpha,
+# )
+
+
+data = [
+    [
+        [0, 2, 2, 0, 0],
+        [2, 0, 2, 2, 1],
+        [2, 3, 0, 2, 0],
+        [0, 3, 3, 0, 0],
+        [0, 2, 0, 0, 0],
+    ]
 ]
+labels = [["A", "C", "D", "E", "B"]]
+import graphviz
 
-true_labels = ['A', 'B', 'C', 'D', 'E']
-predicted_labels_list = [['A', 'C', 'D', 'E'], ['C', 'D', 'E', 'B']]
+arrow_type_lookup = {1: "odot", 2: "normal", 3: "none"}
 
-metrics_list = calculate_pag_metrics(true_pag, predicted_pags, true_labels, predicted_labels_list)
 
-# Create DataFrame from metrics for easy analysis
-df = pd.DataFrame(metrics_list)
+def data2graph(data, labels):
+    graph = graphviz.Digraph(format="png")
+    for label in labels:
+        graph.node(label)
+    import os
 
-print(df)
+    for i in range(len(data)):
+        for j in range(i + 1, len(data)):
+            arrhead = data[i][j]
+            arrtail = data[j][i]
+            if data[i][j] == 1:
+                graph.edge(
+                    labels[i],
+                    labels[j],
+                    arrowtail=arrow_type_lookup[arrtail],
+                    arrowhead=arrow_type_lookup[arrhead],
+                    dir="both",
+                )
+            elif data[i][j] == 2:
+                graph.edge(
+                    labels[i],
+                    labels[j],
+                    arrowtail=arrow_type_lookup[arrtail],
+                    arrowhead=arrow_type_lookup[arrhead],
+                    dir="both",
+                )
+            elif data[i][j] == 3:
+                graph.edge(
+                    labels[i],
+                    labels[j],
+                    arrowtail=arrow_type_lookup[arrtail],
+                    arrowhead=arrow_type_lookup[arrhead],
+                    dir="both",
+                )
+
+    return graph
+
+
+for d, l in zip(data, labels):
+    g = data2graph(d, l)
+    print(g)
